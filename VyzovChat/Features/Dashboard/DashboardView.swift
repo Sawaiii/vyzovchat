@@ -12,7 +12,6 @@ struct DashboardView: View {
     @State private var mode: Mode = .reports
 
     @State private var companies: [DashCompanyDTO] = []
-    @State private var shifts: [ShiftRowDTO] = []
     @State private var days: [CalendarDayDTO] = []
     /// Выбранный день (YYYY-MM-DD); nil — показываем все отчёты по компаниям.
     @State private var selectedDay: String?
@@ -32,7 +31,9 @@ struct DashboardView: View {
                     // листаться свайпом, как между темами чата и вкладками Диска.
                     TabView(selection: $mode) {
                         page { reportsContent }.tag(Mode.reports)
-                        page { shiftsContent }.tag(Mode.shifts)
+                        // Смены — свой экран со сводкой за период; общий page
+                        // с отступами ему не нужен.
+                        ShiftsSummaryView().tag(Mode.shifts)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 }
@@ -237,68 +238,6 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Смены
-
-    private var shiftsContent: some View {
-        Group {
-            if shifts.isEmpty {
-                EmptyState(icon: "clock", title: "Смен нет",
-                           message: "За последний месяц никто не отмечался.")
-            }
-            ForEach(shifts) { row in
-                HStack(spacing: Spacing.s) {
-                    Avatar(name: row.fio, size: 36, id: String(row.worker_id))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.fio).font(Typography.callout)
-                            .foregroundStyle(Theme.textPrimary).lineLimit(1)
-                        Text(row.event_name).font(.caption2)
-                            .foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        Text(interval(row)).font(.caption2).foregroundStyle(Theme.textSecondary)
-                        if let note = markedBy(row) {
-                            Text(note).font(.caption2).foregroundStyle(Theme.warning)
-                        }
-                    }
-                    Spacer()
-                    Circle()
-                        .fill(row.finished_at == nil ? Theme.success : Theme.textSecondary)
-                        .frame(width: 8, height: 8)
-                }
-                .padding(Spacing.s)
-                .glass(cornerRadius: Theme.cornerSmall, elevated: false)
-            }
-        }
-    }
-
-    private func interval(_ row: ShiftRowDTO) -> String {
-        let start = Self.format(row.checked_at)
-        guard let finished = row.finished_at else { return "с \(start) — на смене" }
-        return "\(start) — \(Self.format(finished))"
-    }
-
-    private func markedBy(_ row: ShiftRowDTO) -> String? {
-        let opened = row.opened_by?.isEmpty == false ? row.opened_by : nil
-        let closed = row.closed_by?.isEmpty == false ? row.closed_by : nil
-        switch (opened, closed) {
-        case let (o?, c?) where o == c: return "отметил(а) \(o)"
-        case let (o?, c?):              return "открыл(а) \(o), закрыл(а) \(c)"
-        case let (o?, nil):             return "открыл(а) \(o)"
-        case let (nil, c?):             return "закрыл(а) \(c)"
-        default:                        return nil
-        }
-    }
-
-    private static func format(_ iso: String) -> String {
-        guard let date = DateParse.iso(iso) else { return "—" }
-        return formatter.string(from: date)
-    }
-
-    private static let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
-        f.dateFormat = "d MMM, HH:mm"
-        return f
-    }()
-
     private func load() async {
         // Повторные обновления и свайпы между страницами запускали загрузку
         // внахлёст: запросы отменяли друг друга, а неудача затирала показанное —
@@ -324,7 +263,8 @@ struct DashboardView: View {
                 dayEvents = events
             }
         case .shifts:
-            if let rows = await session.dashboard.allShifts(from: nil, to: nil) { shifts = rows }
+            // Смены грузит свой экран — у него свой период.
+            break
         }
         isLoading = false
     }
