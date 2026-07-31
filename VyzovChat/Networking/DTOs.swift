@@ -720,6 +720,8 @@ extension Chat {
             colorHex: event.color,
             company: companyName
         )
+        self.startsAt = DateParse.iso(event.starts_at)
+        self.endsAt = DateParse.iso(event.ends_at)
         self.isChatAdmin = event.my_chat_admin ?? false
         self.tags = (event.tags ?? []).map { ChatTag(name: $0.name, colorHex: $0.color) }
         self.needsPhoto = event.needs_photo ?? false

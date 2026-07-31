@@ -48,6 +48,48 @@ struct ChatView: View {
                 set: { if !$0 { model.uploadError = nil } })
     }
 
+    /// Дата и время мероприятия в шапке чата.
+    ///
+    /// Пока начало ещё не наступило, время подписано как «приезд» и выделено:
+    /// выезднику важнее всего, к какому часу быть на месте. После начала —
+    /// обычный интервал «с … до …».
+    @ViewBuilder
+    private var eventTimeLine: some View {
+        if let start = model.chat.startsAt {
+            let upcoming = start > Date()
+            HStack(spacing: 6) {
+                Image(systemName: "calendar").font(.system(size: 10))
+                Text(Self.dayFormatter.string(from: start))
+                Text("·")
+                if upcoming {
+                    Text("приезд \(Self.timeFormatter.string(from: start))")
+                        .foregroundStyle(Theme.accent)
+                } else if let end = model.chat.endsAt {
+                    Text("\(Self.timeFormatter.string(from: start)) — \(Self.timeFormatter.string(from: end))")
+                } else {
+                    Text("с \(Self.timeFormatter.string(from: start))")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(Theme.textSecondary)
+            .lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "d MMMM"
+        return f
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private var myFio: String? { session.currentUser?.fio }
     private var isAdmin: Bool { session.currentUser?.isAdmin ?? false }
 
@@ -56,11 +98,14 @@ struct ChatView: View {
             chatBackground
             VStack(spacing: 0) {
                 if !model.chat.isDirect {
-                    HStack(spacing: 6) {
-                        if let company = model.chat.company {
-                            CompanyBadge(name: company, compact: false)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            if let company = model.chat.company {
+                                CompanyBadge(name: company, compact: false)
+                            }
+                            StatusBadgesRow(badges: model.chat.statusBadges)
                         }
-                        StatusBadgesRow(badges: model.chat.statusBadges)
+                        eventTimeLine
                     }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Spacing.m)
