@@ -1,0 +1,86 @@
+name: Build unsigned IPA
+
+# Собирает неподписанный .ipa на бесплатном macOS-раннере.
+# Запускается при пуше в любую ветку и вручную (вкладка Actions → Run workflow).
+# Ветки собираем тоже: локально на Windows Swift не компилируется, поэтому CI
+# служит ещё и компилятором — ошибки надо видеть до вливания в main.
+# Готовый файл лежит в артефактах сборки — скачиваете на Windows
+# и ставите на iPhone через Sideloadly / AltStore.
+
+on:
+  push:
+    branches: [ '**' ]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15   # Xcode 16 — читает свежий формат проекта от XcodeGen
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned, device SDK)
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project VyzovChat.xcodeproj \
+            -scheme VyzovChat \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      - name: Inspect app icons
+        run: |
+          APP="build/Build/Products/Release-iphoneos/VyzovChat.app"
+          echo "--- иконки-файлы в бандле ---"
+          ls -1 "$APP" | grep -i icon || echo "(отдельных файлов иконок нет — норм, если есть Assets.car)"
+          echo "--- Assets.car ---"
+          ls -lh "$APP/Assets.car" 2>/dev/null || echo "НЕТ Assets.car"
+          echo "--- ключи иконок в Info.plist ---"
+          plutil -p "$APP/Info.plist" | grep -iA8 "CFBundleIcon" || echo "!!! КЛЮЧЕЙ CFBundleIcon НЕТ"
+          echo "--- какие имена иконок знает Assets.car ---"
+          xcrun assetutil --info "$APP/Assets.car" 2>/dev/null | grep -iE '"Name"|"SizeOnDisk"|RenditionName' | head -30 || true
+
+      - name: Package .ipa
+        run: |
+          set -eo pipefail
+          APP_PATH="build/Build/Products/Release-iphoneos/VyzovChat.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Не найден собранный .app по пути $APP_PATH"
+            find build -name "*.app" -maxdepth 6 || true
+            exit 1
+          fi
+          rm -rf Payload VyzovChat.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" "Payload/"
+          zip -qry VyzovChat.ipa Payload
+          echo "IPA собран:"
+          ls -lh VyzovChat.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VyzovChat-unsigned-ipa
+          path: VyzovChat.ipa
+          if-no-files-found: error
+          retention-days: 14

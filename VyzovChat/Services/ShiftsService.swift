@@ -1,0 +1,95 @@
+import Foundation
+
+/// Смены на мероприятии: «я на месте» и «завершить смену».
+///
+/// Координаты обязательны — отметка подтверждает, что человек действительно на
+/// площадке, и без гео сервер отвечает `geo_required`. Если телефон не отдаёт
+/// геопозицию (нет разрешения, сел GPS), смену за сотрудника открывает админ чата
+/// вручную — тогда в отметке сохраняется, кто её проставил.
+protocol ShiftsServicing {
+    /// Смены мероприятия. Обычный сотрудник видит только свою,
+    /// куратор — ещё и тех, кого позвал сам; админ чата — все.
+    func shifts(dealId: String) async -> [CheckinDTO]
+    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO
+    func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO
+    /// Отметка за сотрудника (админ чата). Геометки здесь нет и быть не может —
+    /// админ не на месте сотрудника.
+    func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO
+    func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO
+}
+
+/// Ошибки смены с понятным человеку текстом.
+enum ShiftError: LocalizedError {
+    case geoUnavailable
+    case notCheckedIn
+    case warehouse
+    case notMember
+
+    var errorDescription: String? {
+        switch self {
+        case .geoUnavailable:
+            return "Не удалось определить геопозицию. Разрешите доступ к геоданным в настройках — без координат отметить смену нельзя."
+        case .notCheckedIn: return "Смена ещё не открыта"
+        case .warehouse:    return "Складу смены не отмечают"
+        case .notMember:    return "Вы не в составе этого мероприятия"
+        }
+    }
+
+    /// Разбор кода ошибки сервера в понятный текст.
+    static func from(_ error: Error) -> Error {
+        guard case let APIError.http(_, message) = error, let message else { return error }
+        switch message {
+        case "geo_required":             return ShiftError.geoUnavailable
+        case "not_checked_in":           return ShiftError.notCheckedIn
+        case "no_checkin_for_warehouse": return ShiftError.warehouse
+        case "not_member":               return ShiftError.notMember
+        default:                         return error
+        }
+    }
+}
+
+private struct GeoRequest: Encodable {
+    let lat: Double
+    let lng: Double
+}
+
+final class RealShiftsService: ShiftsServicing {
+    func shifts(dealId: String) async -> [CheckinDTO] {
+        // Отдельного эндпоинта нет — смены приходят в карточке мероприятия,
+        // уже отфильтрованные сервером по правам смотрящего.
+        guard let dto = try? await APIClient.shared.get("/api/events/\(dealId)", as: EventDetailsDTO.self) else { return [] }
+        return dto.checkins ?? []
+    }
+
+    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/checkin", body: GeoRequest(lat: lat, lng: lng))
+    }
+
+    func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/checkout", body: GeoRequest(lat: lat, lng: lng))
+    }
+
+    func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/members/\(workerId)/checkin", body: EmptyBody())
+    }
+
+    func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/members/\(workerId)/checkout", body: EmptyBody())
+    }
+
+    private func post(_ path: String, body: Encodable) async throws -> CheckinDTO {
+        do {
+            return try await APIClient.shared.post(path, json: body, as: CheckinDTO.self)
+        } catch {
+            throw ShiftError.from(error)
+        }
+    }
+}
+
+final class MockShiftsService: ShiftsServicing {
+    func shifts(dealId: String) async -> [CheckinDTO] { [] }
+    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO { throw ShiftError.geoUnavailable }
+    func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO { throw ShiftError.geoUnavailable }
+    func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }
+    func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }
+}
