@@ -139,6 +139,8 @@ struct EventDTO: Decodable {
     let starts_at: String?
     let ends_at: String?
     let tags: [EventTagDTO]?
+    /// Сколько человек в составе — знаменатель для «На смене: 1/5».
+    let members_count: Int?
     /// Я админ этого чата — по нему интерфейс решает, показывать ли правки.
     let my_chat_admin: Bool?
 }

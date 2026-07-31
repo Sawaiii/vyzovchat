@@ -19,6 +19,15 @@ struct DashboardView: View {
     @State private var isLoading = true
     @State private var isRefreshing = false
     @State private var mediaPreview: MediaPreview?
+    @State private var showCalendar = true
+    @State private var calendarMonth = Date()
+    @State private var companyFilterName: String?
+    /// Сколько человек в составе каждого мероприятия — знаменатель «На смене: 1/5».
+    @State private var membersCount: [Int: Int] = [:]
+
+    private var daysByDate: [String: CalendarDayDTO] {
+        Dictionary(days.map { ($0.date, $0) }, uniquingKeysWith: { a, _ in a })
+    }
 
     var body: some View {
         NavigationStack {
@@ -72,58 +81,82 @@ struct DashboardView: View {
 
     private var reportsContent: some View {
         Group {
-            calendarStrip
+            // Две подстраницы, как в вебе: календарь и общий список.
+            HStack(spacing: 4) {
+                subTab("Календарь", isOn: showCalendar) { showCalendar = true }
+                subTab("Все отчёты", isOn: !showCalendar) { showCalendar = false; selectedDay = nil }
+            }
 
-            if let selectedDay {
-                // Выбран день — показываем только его отчёты.
-                if dayEvents.isEmpty {
-                    EmptyState(icon: "calendar", title: "За этот день отчётов нет",
-                               message: "Выберите другой день или вернитесь ко всем отчётам.")
+            if showCalendar {
+                ReportCalendar(days: daysByDate, month: $calendarMonth,
+                               selected: selectedDay) { key in
+                    Task { await select(key) }
                 }
-                ForEach(dayEvents) { event in eventCard(event) }
+                if let selectedDay {
+                    Text(dayEvents.isEmpty ? "За этот день отчётов нет" : "Отчёты за \(Self.humanDay(selectedDay))")
+                        .font(Typography.caption).foregroundStyle(Theme.textSecondary)
+                    ForEach(dayEvents) { event in eventCard(event, company: nil) }
+                }
             } else {
-                if companies.isEmpty {
+                companyFilter
+                if filteredEvents.isEmpty {
                     EmptyState(icon: "tray", title: "Отчётов нет",
                                message: "Здесь появятся мероприятия с отправленным фотоотчётом.")
                 }
+                ForEach(filteredEvents, id: \.event.id) { pair in
+                    eventCard(pair.event, company: pair.company)
+                }
+            }
+        }
+    }
+
+    private func subTab(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(isOn ? .semibold : .regular))
+                .foregroundStyle(isOn ? Theme.textOnAccent : Theme.textSecondary)
+                .frame(maxWidth: .infinity).padding(.vertical, 7)
+                .background(isOn ? Theme.accent : Theme.panel2, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Отчёты плоским списком с компанией у каждого — так их можно фильтровать
+    /// чипами, не теряя, к какой компании относится мероприятие.
+    private var allEvents: [(event: DashEventDTO, company: String)] {
+        companies.flatMap { company in
+            company.events.map { (event: $0, company: company.name) }
+        }
+    }
+
+    private var filteredEvents: [(event: DashEventDTO, company: String)] {
+        guard let companyFilterName else { return allEvents }
+        return allEvents.filter { $0.company == companyFilterName }
+    }
+
+    private var companyFilter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                filterChip("Все", count: allEvents.count, isOn: companyFilterName == nil) {
+                    companyFilterName = nil
+                }
                 ForEach(companies) { company in
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text(company.name.isEmpty ? "Без компании" : company.name)
-                            .font(Typography.headline).foregroundStyle(Theme.groupTitle)
-                        ForEach(company.events) { event in eventCard(event) }
+                    filterChip(company.name.isEmpty ? "Без компании" : company.name,
+                               count: company.events.count,
+                               isOn: companyFilterName == company.name) {
+                        companyFilterName = company.name
                     }
                 }
             }
         }
     }
 
-    /// Дни, за которые есть отчёты: сколько сдано и сколько ещё не смотрели.
-    private var calendarStrip: some View {
-        Group {
-            if !days.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        dayChip(title: "Все", isOn: selectedDay == nil, badge: 0) {
-                            selectedDay = nil
-                        }
-                        ForEach(days) { day in
-                            dayChip(title: Self.shortDay(day.date),
-                                    isOn: selectedDay == day.date,
-                                    badge: max(day.total - day.viewed, 0)) {
-                                Task { await select(day.date) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func dayChip(title: String, isOn: Bool, badge: Int, action: @escaping () -> Void) -> some View {
+    private func filterChip(_ title: String, count: Int, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text(title).font(.caption.weight(isOn ? .semibold : .regular))
-                if badge > 0 { UnreadBadge(count: badge, background: isOn ? .white.opacity(0.3) : Theme.accent) }
+                Text("\(count)").font(.system(size: 9))
+                    .opacity(0.7)
             }
             .foregroundStyle(isOn ? Theme.textOnAccent : Theme.textSecondary)
             .padding(.horizontal, 10).padding(.vertical, 7)
@@ -132,36 +165,33 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
+    private static func humanDay(_ key: String) -> String {
+        let input = DateFormatter()
+        input.locale = Locale(identifier: "en_US_POSIX")
+        input.dateFormat = "yyyy-MM-dd"
+        guard let date = input.date(from: key) else { return key }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "ru_RU")
+        out.dateFormat = "d MMMM"
+        return out.string(from: date)
+    }
+
     private func select(_ date: String) async {
         selectedDay = date
         if let events = await session.dashboard.day(date) { dayEvents = events }
     }
 
-    /// «31 июл» — в полосе дней место ограничено.
-    private static func shortDay(_ iso: String) -> String {
-        let input = DateFormatter()
-        input.locale = Locale(identifier: "en_US_POSIX")
-        input.dateFormat = "yyyy-MM-dd"
-        guard let date = input.date(from: iso) else { return iso }
-        let output = DateFormatter()
-        output.locale = Locale(identifier: "ru_RU")
-        output.dateFormat = "d MMM"
-        return output.string(from: date)
-    }
-
-    private func eventCard(_ event: DashEventDTO) -> some View {
-        GlassCard {
+    private func eventCard(_ event: DashEventDTO, company: String?) -> some View {
+        let onShift = (event.checkins ?? []).filter { $0.finished_at == nil }.count
+        let total = membersCount[event.id] ?? (event.checkins ?? []).count
+        let openClaims = (event.claims ?? []).filter(\.isOpen).count
+        return GlassCard {
             VStack(alignment: .leading, spacing: Spacing.s) {
                 HStack(alignment: .top, spacing: Spacing.xs) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.name).font(Typography.callout.weight(.medium))
-                            .foregroundStyle(Theme.textPrimary).lineLimit(3)
-                        if let admins = event.admins, !admins.isEmpty {
-                            Text("Ответственные: " + admins.map(\.fio).joined(separator: ", "))
-                                .font(.caption2).foregroundStyle(Theme.textSecondary).lineLimit(2)
-                        }
-                    }
-                    Spacer()
+                    Text(event.name).font(Typography.callout.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary).lineLimit(3)
+                    Spacer(minLength: Spacing.xs)
+                    if let company, !company.isEmpty { CompanyBadge(name: company) }
                     if event.viewed != true {
                         Text("новое").font(.caption2.weight(.semibold))
                             .foregroundStyle(Theme.textOnAccent)
@@ -170,21 +200,50 @@ struct DashboardView: View {
                     }
                 }
 
-                if event.photos_restricted == true {
-                    Label("Фото использовать нельзя", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2).foregroundStyle(Theme.warning)
+                // Ответственные за мероприятие — их видно первыми: с них и спрос.
+                if let admins = event.admins, !admins.isEmpty {
+                    FlowLayout(spacing: 4) {
+                        Text("Главный:").font(.caption2).foregroundStyle(Theme.textSecondary)
+                        ForEach(admins) { admin in
+                            Label(admin.fio, systemImage: "person.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(Theme.panel2, in: Capsule())
+                        }
+                    }
                 }
-                if event.hasOpenClaim {
-                    Label("Открыта претензия", systemImage: "exclamationmark.bubble.fill")
-                        .font(.caption2).foregroundStyle(Theme.danger)
+
+                if event.photos_restricted == true {
+                    Label("ФОТО НЕЛЬЗЯ БРАТЬ", systemImage: "lock.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.danger, in: Capsule())
+                }
+                if openClaims > 0 {
+                    Label("Претензия · \(openClaims)", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.warning)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.warning.opacity(0.15), in: Capsule())
                 }
 
                 photoStrip(event)
 
-                HStack(spacing: Spacing.m) {
-                    stat("Смены", (event.checkins ?? []).count)
-                    stat("Документы", (event.docs ?? []).count)
-                    stat("Претензии", (event.claims ?? []).count)
+                HStack(spacing: Spacing.xs) {
+                    chip("Документы: \((event.docs ?? []).isEmpty ? "нет" : "\((event.docs ?? []).count)")",
+                         icon: "doc.text")
+                    chip("На смене: \(onShift)/\(total)", icon: "person.badge.clock")
+                    Spacer()
+                    // Из отчёта можно сразу уйти в чат мероприятия и спросить.
+                    Button {
+                        Router.shared.openChat(id: "chat-\(event.id)")
+                    } label: {
+                        Label("В чат", systemImage: "bubble.left")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
                 }
             }
         }
@@ -231,11 +290,12 @@ struct DashboardView: View {
         mediaPreview = MediaPreview(items: items, index: index)
     }
 
-    private func stat(_ title: String, _ value: Int) -> some View {
-        VStack(spacing: 1) {
-            Text("\(value)").font(Typography.callout.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-            Text(title).font(.caption2).foregroundStyle(Theme.textSecondary)
-        }
+    private func chip(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.system(size: 10))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Theme.panel2, in: Capsule())
     }
 
     private func load() async {
@@ -259,6 +319,13 @@ struct DashboardView: View {
             // означал бы «отчётов нет», а это неправда.
             if let c { companies = c }
             if let d { days = d }
+            // Состав берём из общего списка мероприятий: в карточке отчёта его
+            // нет, а без знаменателя «На смене» не посчитать.
+            if let events = try? await APIClient.shared.get("/api/events", as: [EventDTO].self) {
+                membersCount = Dictionary(events.compactMap { ev in
+                    ev.members_count.map { (ev.id, $0) }
+                }, uniquingKeysWith: { a, _ in a })
+            }
             if let selectedDay, let events = await session.dashboard.day(selectedDay) {
                 dayEvents = events
             }
