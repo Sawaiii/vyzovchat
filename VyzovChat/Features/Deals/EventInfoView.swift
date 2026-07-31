@@ -9,6 +9,10 @@ struct EventInfoView: View {
     let eventTitle: String
     let isChatAdmin: Bool
     let canInvite: Bool
+    /// Подтема «Претензия» — туда уходит комментарий при урегулировании.
+    var claimTopicId: Int?
+    /// Фото с мероприятия запрещено использовать (галочка ниже).
+    @State var photosRestricted: Bool = false
 
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
@@ -16,8 +20,6 @@ struct EventInfoView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var equipment: [EquipmentDTO] = []
-    @State private var documents: [DocumentDTO] = []
-    @State private var claims: [ClaimDTO] = []
     @State private var isLoading = true
     @State private var errorText: String?
 
@@ -29,9 +31,12 @@ struct EventInfoView: View {
     @State private var invite: InviteDTO?
     @State private var invitingRole: String?
 
-    @State private var showClaimEditor = false
-    @State private var showFileImporter = false
-    @State private var uploadingDoc = false
+    @State private var showDocuments = false
+    @State private var showClaims = false
+    /// Метки и признаки мероприятия — их надо сохранить вместе с галочкой фото.
+    @State private var currentTagIds: [Int] = []
+    @State private var needsPhoto = false
+    @State private var needsReport = false
 
     var body: some View {
         NavigationStack {
@@ -43,9 +48,9 @@ struct EventInfoView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Spacing.m) {
                             if let errorText { ErrorBanner(text: errorText) }
+                            restrictedCard
+                            sectionsCard
                             if canInvite { inviteCard }
-                            claimsSection
-                            documentsSection
                             equipmentSection
                         }
                         .padding(.horizontal, metrics.horizontalPadding)
@@ -58,13 +63,92 @@ struct EventInfoView: View {
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Закрыть") { dismiss() } } }
             .task { await load() }
             .refreshable { await load() }
-            .sheet(isPresented: $showClaimEditor) {
-                ClaimEditorView(dealId: dealId) { Task { await load() } }
+            .sheet(isPresented: $showDocuments) {
+                EventDocumentsView(dealId: dealId, isChatAdmin: isChatAdmin)
                     .environmentObject(session)
             }
-            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.item]) { result in
-                handleDocumentImport(result)
+            .sheet(isPresented: $showClaims) {
+                ClaimsView(dealId: dealId, isChatAdmin: isChatAdmin, claimTopicId: claimTopicId)
+                    .environmentObject(session)
             }
+        }
+    }
+
+    /// Запрет на использование фото. Отдельной карточкой и с предупреждением:
+    /// это не настройка «для порядка», а обязательство перед клиентом.
+    private var restrictedCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Toggle(isOn: Binding(
+                    get: { photosRestricted },
+                    set: { value in
+                        photosRestricted = value
+                        Task { await saveRestricted(value) }
+                    }
+                )) {
+                    Label("Нельзя использовать фото", systemImage: "lock.fill")
+                        .font(Typography.callout.weight(.medium))
+                        .foregroundStyle(photosRestricted ? Theme.danger : Theme.textPrimary)
+                }
+                .tint(Theme.danger)
+                .disabled(!isChatAdmin)
+
+                Text("Клиент запретил публикацию съёмки. В фотобанке и в отчёте все кадры этого мероприятия получат красную пометку, чтобы их не взяли в рекламу или соцсети.")
+                    .font(.caption2).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
+                .stroke(photosRestricted ? Theme.danger.opacity(0.6) : .clear, lineWidth: 1)
+        )
+    }
+
+    /// Разделы мероприятия отдельными экранами — как в вебе.
+    private var sectionsCard: some View {
+        VStack(spacing: Spacing.xs) {
+            Button { showDocuments = true } label: {
+                sectionRow("Документы", icon: "doc.text.fill",
+                           hint: "Акты приёма и возврата, прочие файлы")
+            }
+            .buttonStyle(PressableStyle())
+
+            Button { showClaims = true } label: {
+                sectionRow("Претензии", icon: "exclamationmark.triangle.fill",
+                           hint: "Ущерб и утеря по позициям оборудования")
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    private func sectionRow(_ title: String, icon: String, hint: String) -> some View {
+        HStack(spacing: Spacing.s) {
+            Image(systemName: icon).foregroundStyle(Theme.accent).frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(Typography.callout.weight(.medium))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(hint).font(.caption2).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
+        }
+        .padding(Spacing.s)
+        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
+        .contentShape(Rectangle())
+    }
+
+    private func saveRestricted(_ value: Bool) async {
+        errorText = nil
+        do {
+            // Метки и признаки уходят одним запросом — сохраняем уже выбранные,
+            // иначе включение галочки сбросило бы метки мероприятия.
+            try await session.directory.setEventTags(
+                dealId: dealId, tagIds: currentTagIds,
+                needsPhoto: needsPhoto, needsReport: needsReport, photosRestricted: value)
+            Haptics.success()
+        } catch {
+            photosRestricted = !value
+            errorText = error.localizedDescription
+            Haptics.warning()
         }
     }
 
@@ -128,152 +212,6 @@ struct EventInfoView: View {
         } catch {
             errorText = error.localizedDescription
             Haptics.warning()
-        }
-    }
-
-    // MARK: - Претензии
-
-    private var claimsSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack {
-                Text("Претензии").font(Typography.headline).foregroundStyle(Theme.textPrimary)
-                Spacer()
-                if isChatAdmin {
-                    Button("Зафиксировать") { showClaimEditor = true }
-                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                }
-            }
-            if claims.isEmpty {
-                Text("Претензий нет.").font(Typography.caption).foregroundStyle(Theme.textSecondary)
-            }
-            ForEach(claims) { claim in claimRow(claim) }
-        }
-    }
-
-    private func claimRow(_ claim: ClaimDTO) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack {
-                Text(claim.statusTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(claim.isOpen ? Theme.danger : Theme.success)
-                Spacer()
-                if let author = claim.author_fio, !author.isEmpty {
-                    Text(author).font(.caption2).foregroundStyle(Theme.textSecondary)
-                }
-            }
-            ForEach(claim.items ?? []) { item in
-                HStack(alignment: .top, spacing: 6) {
-                    Text("•").foregroundStyle(Theme.textSecondary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.position + (item.qty.map { " — \($0) шт." } ?? ""))
-                            .font(Typography.callout).foregroundStyle(Theme.textPrimary)
-                        Text(item.kindTitle + (item.note.map { ": \($0)" } ?? ""))
-                            .font(.caption2).foregroundStyle(Theme.textSecondary)
-                    }
-                }
-            }
-            if isChatAdmin && claim.isOpen {
-                // Открытая претензия блокирует завершение и архивацию мероприятия —
-                // поэтому её надо явно урегулировать.
-                Button("Урегулирована") { Task { await closeClaim(claim) } }
-                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-            }
-        }
-        .padding(Spacing.s)
-        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
-    }
-
-    private func closeClaim(_ claim: ClaimDTO) async {
-        do {
-            try await session.eventInfo.closeClaim(id: claim.id)
-            Haptics.success()
-            await load()
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
-    // MARK: - Документы
-
-    private var documentsSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack {
-                Text("Документы").font(Typography.headline).foregroundStyle(Theme.textPrimary)
-                Spacer()
-                if isChatAdmin {
-                    Button(uploadingDoc ? "Загрузка…" : "Добавить") { showFileImporter = true }
-                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                        .disabled(uploadingDoc)
-                }
-            }
-            if documents.isEmpty {
-                Text("Документов нет.").font(Typography.caption).foregroundStyle(Theme.textSecondary)
-            }
-            ForEach(documents) { doc in documentRow(doc) }
-        }
-    }
-
-    private func documentRow(_ doc: DocumentDTO) -> some View {
-        HStack(spacing: Spacing.s) {
-            Image(systemName: "doc.text.fill").foregroundStyle(Theme.accent)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(doc.typeTitle).font(Typography.callout)
-                    .foregroundStyle(Theme.textPrimary).lineLimit(1)
-                if let name = doc.file_name, !name.isEmpty {
-                    Text(name).font(.caption2).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                } else if let body = doc.body, !body.isEmpty {
-                    Text(body).font(.caption2).foregroundStyle(Theme.textSecondary).lineLimit(2)
-                }
-            }
-            Spacer()
-            if let link = AppConfig.mediaURL(doc.download_url ?? doc.file_url) {
-                Button { openURL(link) } label: {
-                    Image(systemName: "arrow.down.circle").foregroundStyle(Theme.accent)
-                }
-            }
-            if isChatAdmin {
-                Button { Task { await deleteDocument(doc) } } label: {
-                    Image(systemName: "trash").foregroundStyle(Theme.danger)
-                }
-            }
-        }
-        .padding(Spacing.s)
-        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
-    }
-
-    private func deleteDocument(_ doc: DocumentDTO) async {
-        do {
-            try await session.eventInfo.deleteDocument(dealId: dealId, docId: doc.id)
-            Haptics.success()
-            await load()
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
-    /// Документ уходит в хранилище напрямую (presign с purpose «document»),
-    /// а на сервер отправляется только выданный ключ.
-    private func handleDocumentImport(_ result: Result<URL, Error>) {
-        guard case .success(let url) = result else { return }
-        uploadingDoc = true
-        errorText = nil
-        Task {
-            defer { uploadingDoc = false }
-            let access = url.startAccessingSecurityScopedResource()
-            let data = try? Data(contentsOf: url)
-            let name = url.lastPathComponent
-            if access { url.stopAccessingSecurityScopedResource() }
-            guard let data else { return }
-            do {
-                let media = try await MediaUploader.uploadFile(data, filename: name, purpose: .document)
-                _ = try await session.eventInfo.addDocument(dealId: dealId, AddDocumentRequest(
-                    type: "other", title: name, key: media.key, name: name, size: media.size, body: nil))
-                Haptics.success()
-                await load()
-            } catch {
-                errorText = error.localizedDescription
-                Haptics.warning()
-            }
         }
     }
 
@@ -352,103 +290,17 @@ struct EventInfoView: View {
 
     private func load() async {
         async let eq = session.eventInfo.equipment(dealId: dealId)
-        async let docs = session.eventInfo.documents(dealId: dealId)
-        async let cl = session.eventInfo.claims(dealId: dealId)
-        let (e, d, c) = await (eq, docs, cl)
-        equipment = e
-        documents = d
-        claims = c
+        async let ev = session.directory.event(id: dealId)
+        equipment = await eq
+        // Метки и признаки читаем из карточки: галочка «нельзя использовать фото»
+        // сохраняется вместе с ними одним запросом.
+        if let dto = await ev {
+            photosRestricted = dto.photos_restricted ?? false
+            needsPhoto = dto.needs_photo ?? false
+            needsReport = dto.needs_report ?? false
+            currentTagIds = (dto.tags ?? []).map(\.id)
+        }
         isLoading = false
     }
 }
 
-/// Форма претензии: перечень утерянного и повреждённого.
-private struct ClaimEditorView: View {
-    let dealId: String
-    let onSaved: () -> Void
-
-    @EnvironmentObject private var session: AppSession
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.adaptiveMetrics) private var metrics
-
-    struct Row: Identifiable {
-        let id = UUID()
-        var position = ""
-        var kind = "damage"
-        var qty = ""
-        var note = ""
-    }
-
-    @State private var rows: [Row] = [Row()]
-    @State private var saving = false
-    @State private var errorText: String?
-
-    private var canSave: Bool {
-        !saving && rows.contains { !$0.position.trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                AmbientBackground()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Spacing.m) {
-                        Text("Перечислите, что утеряно или повреждено. Пока претензия открыта, мероприятие нельзя завершить или убрать в архив.")
-                            .font(Typography.caption).foregroundStyle(Theme.textSecondary)
-
-                        ForEach($rows) { $row in
-                            GlassCard {
-                                VStack(spacing: Spacing.s) {
-                                    GlassField(placeholder: "Позиция", icon: "shippingbox", text: $row.position)
-                                    Picker("", selection: $row.kind) {
-                                        Text("Повреждено").tag("damage")
-                                        Text("Утеряно").tag("loss")
-                                    }
-                                    .pickerStyle(.segmented)
-                                    GlassField(placeholder: "Количество", icon: "number", keyboard: .numberPad, text: $row.qty)
-                                    GlassField(placeholder: "Примечание", icon: "text.alignleft", text: $row.note)
-                                }
-                            }
-                        }
-
-                        SecondaryButton(title: "Ещё позиция", icon: "plus") { rows.append(Row()) }
-                        if let errorText { ErrorBanner(text: errorText) }
-                    }
-                    .padding(.horizontal, metrics.horizontalPadding)
-                    .padding(.vertical, Spacing.s)
-                }
-            }
-            .navigationTitle("Претензия")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Отмена") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Сохранить") { Task { await save() } }.disabled(!canSave).bold()
-                }
-            }
-        }
-    }
-
-    private func save() async {
-        saving = true
-        errorText = nil
-        defer { saving = false }
-        let items = rows.compactMap { row -> CreateClaimRequest.Item? in
-            let position = row.position.trimmingCharacters(in: .whitespaces)
-            guard !position.isEmpty else { return nil }
-            return CreateClaimRequest.Item(position: position, kind: row.kind,
-                                           note: row.note.trimmingCharacters(in: .whitespaces),
-                                           qty: Int(row.qty))
-        }
-        guard !items.isEmpty else { return }
-        do {
-            try await session.eventInfo.createClaim(dealId: dealId, items: items)
-            Haptics.success()
-            onSaved()
-            dismiss()
-        } catch {
-            errorText = error.localizedDescription
-            Haptics.warning()
-        }
-    }
-}

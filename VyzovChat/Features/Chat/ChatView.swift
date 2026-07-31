@@ -151,7 +151,8 @@ struct ChatView: View {
             EventInfoView(dealId: model.chat.dealId,
                           eventTitle: model.chat.title,
                           isChatAdmin: model.isChatAdmin,
-                          canInvite: model.canInvite)
+                          canInvite: model.canInvite,
+                          claimTopicId: model.claimTopicId)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showShifts) {

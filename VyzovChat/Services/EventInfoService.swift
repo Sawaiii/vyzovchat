@@ -15,6 +15,8 @@ protocol EventInfoServicing {
     func documents(dealId: String) async -> [DocumentDTO]
     func addDocument(dealId: String, _ req: AddDocumentRequest) async throws -> DocumentDTO
     func deleteDocument(dealId: String, docId: Int) async throws
+    /// Отметить документ отправленным в Tony (учётную систему).
+    func sendDocumentToTony(dealId: String, docId: Int) async throws
 
     // Претензии
     func claims(dealId: String) async -> [ClaimDTO]
@@ -61,6 +63,11 @@ final class RealEventInfoService: EventInfoServicing {
         _ = try await APIClient.shared.delete("/api/events/\(dealId)/documents/\(docId)", as: OKDTO.self)
     }
 
+    func sendDocumentToTony(dealId: String, docId: Int) async throws {
+        _ = try await APIClient.shared.post("/api/events/\(dealId)/documents/\(docId)/tony",
+                                            json: EmptyBody(), as: OKDTO.self)
+    }
+
     // MARK: - Претензии
 
     func claims(dealId: String) async -> [ClaimDTO] {
@@ -101,6 +108,7 @@ final class MockEventInfoService: EventInfoServicing {
                     file_url: nil, download_url: nil, body: req.body, sent_to_tony: false, created_at: nil)
     }
     func deleteDocument(dealId: String, docId: Int) async throws {}
+    func sendDocumentToTony(dealId: String, docId: Int) async throws {}
     func claims(dealId: String) async -> [ClaimDTO] { [] }
     func createClaim(dealId: String, items: [CreateClaimRequest.Item]) async throws {}
     func closeClaim(id: Int) async throws {}

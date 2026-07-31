@@ -264,6 +264,11 @@ struct PhotobankBrowser: View {
                                 .padding(4)
                         }
                     }
+                    // Клиент запретил использовать съёмку — предупреждение прямо
+                    // на кадре, чтобы его не утащили в рекламу по невнимательности.
+                    .overlay(alignment: .bottom) {
+                        if item.restricted == true { restrictedBadge }
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 Text(tagline(item))
@@ -334,6 +339,20 @@ struct PhotobankBrowser: View {
         defer { zipping = false }
         zipURL = try? await Backend.photobank().zip(ids: Array(zipIds))
         if zipURL != nil { Haptics.success() } else { Haptics.warning() }
+    }
+
+    /// Красная плашка «нельзя использовать» поверх кадра.
+    private var restrictedBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "lock.fill").font(.system(size: 8))
+            Text("НЕЛЬЗЯ ИСПОЛЬЗОВАТЬ")
+                .font(.system(size: 8, weight: .bold))
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+        .background(Theme.danger)
     }
 
     private func tagline(_ item: PhotobankItemDTO) -> String {

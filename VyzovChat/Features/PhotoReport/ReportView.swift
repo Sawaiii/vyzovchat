@@ -5,11 +5,14 @@ import PhotosUI
 /// в папки мероприятия — «Отчёт», «Фотобанк». Отдельно — «Юридическая инфа» (файл).
 struct ReportView: View {
     @ObservedObject var model: ChatViewModel
+    @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
 
     @State private var busy: String?
     @State private var resultText: String?
     @State private var errorText: String?
+    @State private var showDocuments = false
+    @State private var showClaims = false
 
     private let grid = [GridItem(.adaptive(minimum: 104), spacing: 8)]
 
@@ -49,6 +52,15 @@ struct ReportView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showDocuments) {
+                EventDocumentsView(dealId: model.chat.dealId, isChatAdmin: model.isChatAdmin)
+                    .environmentObject(session)
+            }
+            .sheet(isPresented: $showClaims) {
+                ClaimsView(dealId: model.chat.dealId, isChatAdmin: model.isChatAdmin,
+                           claimTopicId: model.claimTopicId)
+                    .environmentObject(session)
+            }
         }
     }
 
@@ -75,6 +87,22 @@ struct ReportView: View {
                         Theme.panel2
                     }
                 )
+                .overlay(alignment: .bottom) {
+                    // Мероприятие с запретом — предупреждение на каждом кадре,
+                    // чтобы его не отправили в фотобанк по невнимательности.
+                    if model.chat.photosRestricted {
+                        HStack(spacing: 3) {
+                            Image(systemName: "lock.fill").font(.system(size: 8))
+                            Text("НЕЛЬЗЯ ИСПОЛЬЗОВАТЬ")
+                                .font(.system(size: 8, weight: .bold))
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background(Theme.danger)
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(alignment: .topTrailing) {
                 Image(systemName: picked ? "checkmark.circle.fill" : "circle")
@@ -108,16 +136,26 @@ struct ReportView: View {
                 run("report", label: "Отчёт отправлен")
             }
 
+            // Тот же набор действий, что и в вебе: фотобанк, документы,
+            // претензия и юр-инфо рядом с отправкой отчёта.
             HStack(spacing: Spacing.s) {
                 SecondaryButton(title: "Фотобанк", icon: "photo.stack") {
                     run("photobank", label: "Выгружено в фотобанк")
                 }
-                SecondaryButton(title: busy == "legal" ? "Отправка…" : "Юр. инфа",
+                .disabled(model.pickedIds.isEmpty || busy != nil)
+                .opacity(model.pickedIds.isEmpty || busy != nil ? 0.5 : 1)
+
+                SecondaryButton(title: busy == "legal" ? "Отправка…" : "Юр-инфо",
                                 icon: "mappin.and.ellipse") {
                     uploadLegal()
                 }
                 .disabled(model.pickedIds.isEmpty || busy != nil)
                 .opacity(model.pickedIds.isEmpty || busy != nil ? 0.5 : 1)
+            }
+
+            HStack(spacing: Spacing.s) {
+                SecondaryButton(title: "Документы", icon: "doc.text") { showDocuments = true }
+                SecondaryButton(title: "Претензия", icon: "exclamationmark.triangle") { showClaims = true }
             }
         }
         .padding(Spacing.m)

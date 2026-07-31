@@ -387,6 +387,10 @@ final class ChatViewModel: ObservableObject {
     /// Все «страницы» чата мероприятия: «Общий» + темы (для свайпов).
     var topicPages: [Int?] { [nil] + topics.map { Optional($0.id) } }
 
+    /// Подтема «Претензия» — её заводит сервер при первой претензии, в неё же
+    /// уходит комментарий при урегулировании.
+    var claimTopicId: Int? { topics.first { $0.name == "Претензия" }?.id }
+
     /// Слот темы в ответах сервера: «Общий» проходит как "main".
     private func topicKey(_ id: Int?) -> String { id.map(String.init) ?? "main" }
 
