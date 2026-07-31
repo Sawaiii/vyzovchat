@@ -405,16 +405,19 @@ final class ChatViewModel: ObservableObject {
     func prefetchTopics() async {
         // По две за раз: у мероприятия бывает пять-шесть тем, и все их ленты разом
         // — это столько же запросов по сотне сообщений каждый.
-        let pending = topicPages.filter { messagesByTopic[topicKey($0)] == nil && $0 != loadedTopicId }
+        // Ключи считаем ЗАРАНЕЕ: внутри группы задач код уже не привязан к главному
+        // потоку, и звать оттуда методы модели нельзя.
+        let pending: [(id: Int?, key: String)] = topicPages
+            .filter { messagesByTopic[topicKey($0)] == nil && $0 != loadedTopicId }
+            .map { (id: $0, key: topicKey($0)) }
         var index = 0
         await withTaskGroup(of: (String, [Message]?).self) { group in
             func addNext() {
                 guard index < pending.count else { return }
-                let id = pending[index]
+                let item = pending[index]
                 index += 1
-                let key = topicKey(id)
                 group.addTask { [service, chat] in
-                    (key, await service.fetchMessages(chatId: chat.id, topicId: id))
+                    (item.key, await service.fetchMessages(chatId: chat.id, topicId: item.id))
                 }
             }
             for _ in 0..<min(2, pending.count) { addNext() }
