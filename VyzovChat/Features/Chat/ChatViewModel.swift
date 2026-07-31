@@ -840,6 +840,8 @@ final class ChatViewModel: ObservableObject {
     /// Идёт запись. Отдельно от `recorder.isRecording`: по этому флагу
     /// переключается поле ввода, и он не должен тикать вместе со счётчиком.
     @Published private(set) var isRecording = false
+    /// Запись зафиксирована — палец можно отпустить, она продолжается.
+    @Published var isRecordingLocked = false
 
     func startRecording() async {
         do {
@@ -855,6 +857,7 @@ final class ChatViewModel: ObservableObject {
     func cancelRecording() {
         recorder.cancel()
         isRecording = false
+        isRecordingLocked = false
         Haptics.selection()
     }
 
@@ -863,6 +866,7 @@ final class ChatViewModel: ObservableObject {
     func finishRecording() async {
         let stopped = recorder.stop()
         isRecording = false
+        isRecordingLocked = false
         guard let result = stopped else { return }
         defer { try? FileManager.default.removeItem(at: result.url) }
         guard let data = try? Data(contentsOf: result.url) else { return }

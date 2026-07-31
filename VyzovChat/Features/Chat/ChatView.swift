@@ -32,6 +32,8 @@ struct ChatView: View {
     @State private var menuPop = false
     @State private var isAtBottom = true
     @State private var showScrollDown = false
+    /// Подсказка под пальцем во время записи голосового.
+    @State private var dragHint: String?
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -986,7 +988,19 @@ struct ChatView: View {
 
     private var inputBar: some View {
         Group {
-            if model.isRecording {
+            // Пока держим палец — подсказка вместо панели: панель с кнопками
+            // нужна только когда запись зафиксирована и палец отпущен.
+            if model.isRecording && !model.isRecordingLocked {
+                HStack(spacing: Spacing.s) {
+                    Circle().fill(Theme.danger).frame(width: 8, height: 8)
+                    Text("Запись…").font(Typography.callout).foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    Text(dragHint ?? "↑ зафиксировать · ← отменить")
+                        .font(.caption2).foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    micButton
+                }
+            } else if model.isRecording {
                 // Счётчик секунд тикает несколько раз в секунду. Он живёт в
                 // отдельной вью со своим наблюдением за рекордером — иначе
                 // перерисовывался бы весь чат на каждый тик.
@@ -1002,6 +1016,48 @@ struct ChatView: View {
     }
 
     private var hasDraft: Bool { !model.draft.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Запись голосового удержанием, как в мессенджерах: держим — пишем,
+    /// ведём вверх — фиксируем и можно отпустить, ведём влево — отменяем.
+    ///
+    /// Кнопки «удалить/отправить» никуда не делись: они появляются, когда запись
+    /// зафиксирована. На площадке в перчатках жест срывается, и без этого
+    /// запасного пути записанное терялось бы.
+    private var micButton: some View {
+        Image(systemName: "mic.fill").font(.headline).foregroundStyle(.white)
+            .frame(width: 40, height: 40)
+            .background(Theme.accent, in: Circle())
+            .scaleEffect(model.isRecording ? 1.25 : 1)
+            .animation(.smooth(duration: 0.15), value: model.isRecording)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !model.isRecording && dragHint == nil {
+                            dragHint = ""
+                            Task { await model.startRecording() }
+                        }
+                        guard model.isRecording, !model.isRecordingLocked else { return }
+                        // Вверх — фиксируем запись, влево — отменяем.
+                        if value.translation.height < -60 {
+                            model.isRecordingLocked = true
+                            Haptics.success()
+                            dragHint = nil
+                        } else if value.translation.width < -80 {
+                            model.cancelRecording()
+                            dragHint = nil
+                        } else {
+                            dragHint = value.translation.height < -20 ? "Отпустите — запись зафиксируется"
+                                                                     : "↑ зафиксировать · ← отменить"
+                        }
+                    }
+                    .onEnded { _ in
+                        dragHint = nil
+                        // Зафиксированную запись отпускание пальца не трогает.
+                        guard model.isRecording, !model.isRecordingLocked else { return }
+                        Task { await model.finishRecording() }
+                    }
+            )
+    }
 
     private var textInputBar: some View {
         HStack(spacing: Spacing.s) {
@@ -1026,10 +1082,7 @@ struct ChatView: View {
                         .frame(width: 40, height: 40).background(Theme.accent, in: Circle())
                 }
             } else {
-                Button { Task { await model.startRecording() } } label: {
-                    Image(systemName: "mic.fill").font(.headline).foregroundStyle(.white)
-                        .frame(width: 40, height: 40).background(Theme.accent, in: Circle())
-                }
+                micButton
             }
         }
     }
