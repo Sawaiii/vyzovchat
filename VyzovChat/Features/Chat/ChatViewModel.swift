@@ -843,18 +843,29 @@ final class ChatViewModel: ObservableObject {
     /// Запись зафиксирована — палец можно отпустить, она продолжается.
     @Published var isRecordingLocked = false
 
+    /// Запуск записи. Держим задачу, чтобы отпускание пальца дождалось её:
+    /// разрешение на микрофон и запуск сессии занимают время, и при коротком
+    /// нажатии «отпустил» приходил РАНЬШЕ «начал». Запись оставалась включённой,
+    /// а интерфейс считал, что её нет, — остановить её было уже нечем.
+    private var recordingStart: Task<Void, Never>?
+
     func startRecording() async {
-        do {
-            try await recorder.start()
-            isRecording = true
-            Haptics.tap()
-        } catch {
-            uploadError = error.localizedDescription
-            Haptics.warning()
+        let task = Task { @MainActor in
+            do {
+                try await recorder.start()
+                isRecording = true
+                Haptics.tap()
+            } catch {
+                uploadError = error.localizedDescription
+                Haptics.warning()
+            }
         }
+        recordingStart = task
+        await task.value
     }
 
-    func cancelRecording() {
+    func cancelRecording() async {
+        await recordingStart?.value
         recorder.cancel()
         isRecording = false
         isRecordingLocked = false
@@ -864,6 +875,9 @@ final class ChatViewModel: ObservableObject {
     /// Закончить запись и отправить. Слишком короткая запись (случайное касание)
     /// не отправляется — рекордер вернёт nil.
     func finishRecording() async {
+        // Дожидаемся запуска: иначе короткое нажатие останавливало «ничего»,
+        // а запись продолжала идти.
+        await recordingStart?.value
         let stopped = recorder.stop()
         isRecording = false
         isRecordingLocked = false

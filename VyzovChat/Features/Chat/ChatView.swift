@@ -34,6 +34,9 @@ struct ChatView: View {
     @State private var showScrollDown = false
     /// Подсказка под пальцем во время записи голосового.
     @State private var dragHint: String?
+    /// Палец сейчас на микрофоне. Отдельно от «идёт запись»: запись стартует
+    /// асинхронно, а кнопка должна реагировать сразу.
+    @State private var isPressingMic = false
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -990,7 +993,7 @@ struct ChatView: View {
         Group {
             // Пока держим палец — подсказка вместо панели: панель с кнопками
             // нужна только когда запись зафиксирована и палец отпущен.
-            if model.isRecording && !model.isRecordingLocked {
+            if isPressingMic && !model.isRecordingLocked {
                 HStack(spacing: Spacing.s) {
                     Circle().fill(Theme.danger).frame(width: 8, height: 8)
                     Text("Запись…").font(Typography.callout).foregroundStyle(Theme.textPrimary)
@@ -1005,7 +1008,7 @@ struct ChatView: View {
                 // отдельной вью со своим наблюдением за рекордером — иначе
                 // перерисовывался бы весь чат на каждый тик.
                 RecordingBar(recorder: model.recorder,
-                             onCancel: { model.cancelRecording() },
+                             onCancel: { Task { await model.cancelRecording() } },
                              onSend: { Task { await model.finishRecording() } })
             } else {
                 textInputBar
@@ -1027,33 +1030,39 @@ struct ChatView: View {
         Image(systemName: "mic.fill").font(.headline).foregroundStyle(.white)
             .frame(width: 40, height: 40)
             .background(Theme.accent, in: Circle())
-            .scaleEffect(model.isRecording ? 1.25 : 1)
-            .animation(.smooth(duration: 0.15), value: model.isRecording)
+            // Растёт под пальцем, как в мессенджерах: видно, что жест поймался.
+            .scaleEffect(isPressingMic ? 1.7 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isPressingMic)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        if !model.isRecording && dragHint == nil {
-                            dragHint = ""
+                        if !isPressingMic {
+                            isPressingMic = true
+                            dragHint = "↑ зафиксировать · ← отменить"
                             Task { await model.startRecording() }
                         }
-                        guard model.isRecording, !model.isRecordingLocked else { return }
+                        guard !model.isRecordingLocked else { return }
                         // Вверх — фиксируем запись, влево — отменяем.
                         if value.translation.height < -60 {
                             model.isRecordingLocked = true
+                            isPressingMic = false
                             Haptics.success()
                             dragHint = nil
                         } else if value.translation.width < -80 {
-                            model.cancelRecording()
+                            isPressingMic = false
                             dragHint = nil
-                        } else {
-                            dragHint = value.translation.height < -20 ? "Отпустите — запись зафиксируется"
-                                                                     : "↑ зафиксировать · ← отменить"
+                            Task { await model.cancelRecording() }
+                        } else if value.translation.height < -20 {
+                            dragHint = "Отпустите — запись зафиксируется"
                         }
                     }
                     .onEnded { _ in
                         dragHint = nil
                         // Зафиксированную запись отпускание пальца не трогает.
-                        guard model.isRecording, !model.isRecordingLocked else { return }
+                        guard isPressingMic, !model.isRecordingLocked else { return }
+                        isPressingMic = false
+                        // Ждём внутри модели: короткое нажатие могло отпуститься
+                        // раньше, чем запись успела начаться.
                         Task { await model.finishRecording() }
                     }
             )
