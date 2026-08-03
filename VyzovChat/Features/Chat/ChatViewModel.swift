@@ -842,6 +842,10 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var isRecording = false
     /// Запись зафиксирована — палец можно отпустить, она продолжается.
     @Published var isRecordingLocked = false
+    /// Повтор `recorder.isPaused` для чата: сам рекордер чат не слушает
+    /// (иначе перерисовывался бы на каждый тик счётчика), а иконку паузы
+    /// переключать надо.
+    @Published private(set) var isRecordingPaused = false
 
     /// Запуск записи. Держим задачу, чтобы отпускание пальца дождалось её:
     /// разрешение на микрофон и запуск сессии занимают время, и при коротком
@@ -864,11 +868,20 @@ final class ChatViewModel: ObservableObject {
         await task.value
     }
 
+    /// Пауза и продолжение уже зафиксированной записи: длинную запись бывает
+    /// нужно прервать на полуслове, а не начинать заново.
+    func togglePause() {
+        if recorder.isPaused { recorder.resume() } else { recorder.pause() }
+        isRecordingPaused = recorder.isPaused
+        Haptics.selection()
+    }
+
     func cancelRecording() async {
         await recordingStart?.value
         recorder.cancel()
         isRecording = false
         isRecordingLocked = false
+        isRecordingPaused = false
         Haptics.selection()
     }
 
@@ -881,6 +894,7 @@ final class ChatViewModel: ObservableObject {
         let stopped = recorder.stop()
         isRecording = false
         isRecordingLocked = false
+        isRecordingPaused = false
         guard let result = stopped else { return }
         defer { try? FileManager.default.removeItem(at: result.url) }
         guard let data = try? Data(contentsOf: result.url) else { return }

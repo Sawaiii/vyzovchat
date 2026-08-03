@@ -10,6 +10,9 @@ final class VoiceRecorder: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     /// Сколько секунд уже пишем — для счётчика в поле ввода.
     @Published private(set) var duration: TimeInterval = 0
+    /// Запись на паузе. Доступна только после фиксации: пока держат палец,
+    /// ставить паузу нечем и незачем.
+    @Published private(set) var isPaused = false
 
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
@@ -75,8 +78,22 @@ final class VoiceRecorder: NSObject, ObservableObject {
         self.recorder = recorder
         self.fileURL = url
         isRecording = true
+        isPaused = false
         duration = 0
         startTimer()
+    }
+
+    /// Приостановить запись. Файл остаётся тем же — продолжение допишется в него.
+    func pause() {
+        guard isRecording, !isPaused, let recorder else { return }
+        recorder.pause()
+        isPaused = true
+    }
+
+    func resume() {
+        guard isRecording, isPaused, let recorder else { return }
+        guard recorder.record() else { return }
+        isPaused = false
     }
 
     /// Закончить запись и отдать файл. `nil` — записи не было или она пустая.
@@ -107,13 +124,17 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recorder = nil
         fileURL = nil
         isRecording = false
+        isPaused = false
         duration = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // Счётчик показывает сотые, поэтому и тикать он должен чаще десяти раз
+        // в секунду — иначе цифры дёргаются через раз. Тикает он в отдельной
+        // маленькой вью, так что перерисовка дешёвая.
+        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let recorder = self.recorder else { return }
                 self.duration = recorder.currentTime
