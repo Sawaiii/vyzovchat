@@ -150,7 +150,13 @@ struct ShiftsSummaryView: View {
     }
 
     private var table: some View {
-        VStack(spacing: Spacing.xs) {
+        // Раскладываем отметки по ключу разреза один раз: NavigationLink
+        // собирает свой экран сразу при появлении строки, и фильтровать весь
+        // список заново для каждой строки было бы накладно.
+        let grouped = Dictionary(grouping: shifts) {
+            slice == .people ? String($0.worker_id) : String($0.event_id)
+        }
+        return VStack(spacing: Spacing.xs) {
             HStack {
                 Text(slice == .people ? "СОТРУДНИК" : (slice == .companies ? "КОМПАНИЯ" : "МЕРОПРИЯТИЕ"))
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.textSecondary)
@@ -163,38 +169,75 @@ struct ShiftsSummaryView: View {
             .padding(.horizontal, Spacing.s)
 
             ForEach(rows) { row in
-                HStack(spacing: Spacing.xs) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.title).font(Typography.callout)
-                            .foregroundStyle(Theme.textPrimary).lineLimit(2)
-                        HStack(spacing: 6) {
-                            if let subtitle = row.subtitle {
-                                Text(subtitle).font(.caption2).foregroundStyle(Theme.textSecondary)
-                            }
-                            if let people = row.people {
-                                Text("\(people) чел.").font(.caption2).foregroundStyle(Theme.textSecondary)
-                            }
-                            // «На смене» показываем только когда есть кого показывать —
-                            // иначе колонка с прочерками занимает место зря.
-                            if row.onShift > 0 {
-                                Text("на смене: \(row.onShift)")
-                                    .font(.caption2).foregroundStyle(Theme.success)
-                            }
-                        }
+                // В «Компаниях» проваливаться некуда: там нет ни одного
+                // человека и ни одного мероприятия — только сумма.
+                if slice == .companies {
+                    tableRow(row)
+                } else {
+                    NavigationLink {
+                        destination(for: row, own: grouped[row.id] ?? [])
+                    } label: {
+                        tableRow(row)
                     }
-                    Spacer(minLength: Spacing.xs)
-                    Text("\(row.trips)").font(Typography.callout)
-                        .foregroundStyle(Theme.textPrimary).frame(width: 62, alignment: .trailing)
-                    Text(ShiftsSummary.hours(row.seconds))
-                        .font(Typography.callout.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 86, alignment: .trailing)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+                    .buttonStyle(PressableStyle())
                 }
-                .padding(Spacing.s)
-                .glass(cornerRadius: Theme.cornerSmall, elevated: false)
             }
         }
+    }
+
+    /// Куда ведёт строка: человек — в свою сводку, мероприятие — в состав смен.
+    @ViewBuilder
+    private func destination(for row: ShiftsSummary.Row, own: [ShiftRowDTO]) -> some View {
+        switch slice {
+        case .people:
+            WorkerShiftsDetailView(fio: row.title, rows: own)
+        case .events:
+            EventShiftsDetailView(eventId: Int(row.id) ?? 0,
+                                  eventName: row.title,
+                                  company: row.subtitle,
+                                  rows: own)
+        case .companies:
+            EmptyView()
+        }
+    }
+
+    private func tableRow(_ row: ShiftsSummary.Row) -> some View {
+        HStack(spacing: Spacing.xs) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title).font(Typography.callout)
+                    .foregroundStyle(Theme.textPrimary).lineLimit(2)
+                HStack(spacing: 6) {
+                    if let subtitle = row.subtitle {
+                        Text(subtitle).font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                    if let people = row.people {
+                        Text("\(people) чел.").font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                    // «На смене» показываем только когда есть кого показывать —
+                    // иначе колонка с прочерками занимает место зря.
+                    if row.onShift > 0 {
+                        Text("на смене: \(row.onShift)")
+                            .font(.caption2).foregroundStyle(Theme.success)
+                    }
+                }
+            }
+            Spacer(minLength: Spacing.xs)
+            Text("\(row.trips)").font(Typography.callout)
+                .foregroundStyle(Theme.textPrimary).frame(width: 62, alignment: .trailing)
+            Text(ShiftsSummary.hours(row.seconds))
+                .font(Typography.callout.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: 86, alignment: .trailing)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            // Стрелка — знак, что строка ведёт дальше.
+            if slice != .companies {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .padding(Spacing.s)
+        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
     }
 
     private func load() async {
