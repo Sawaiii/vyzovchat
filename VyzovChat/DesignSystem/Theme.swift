@@ -24,6 +24,10 @@ enum Theme {
     static let bubbleMine = Color(hex: 0x2B5278)
     static let bubbleOther = Color(hex: 0x182533)
     static let groupTitle = Color(hex: 0xFFCF6B)      // названия мероприятий — жёлтым
+    /// Кликабельное внутри пузыря: упоминания и «переслано от».
+    /// Заметно светлее фона обоих пузырей — accentSecondary для этого не годится,
+    /// он в точности совпадает с цветом своего пузыря и там просто исчезает.
+    static let bubbleLink = Color(hex: 0x6AB7FF)
 
     /// Фон приложения — тёмный градиент как в веб-чате.
     static var appBackground: some View {

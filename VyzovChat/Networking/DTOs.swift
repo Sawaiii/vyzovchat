@@ -460,6 +460,7 @@ struct MessageDTO: Decodable {
     let reply_to: Int?
     let reply: ReplyDTO?
     let forwarded_from: String?
+    let forwarded_from_id: Int?
     let in_photobank: Bool?
     let img_w: Int?
     let img_h: Int?
@@ -816,6 +817,7 @@ extension Message {
         }
         self.editedAt = DateParse.iso(dto.edited_at)
         self.forwardedFrom = dto.forwarded_from
+        self.forwardedFromId = dto.forwarded_from_id.map(String.init)
         self.albumId = dto.album_id
         self.topicId = dto.topic_id
         self.inPhotobank = dto.in_photobank ?? false

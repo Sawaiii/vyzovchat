@@ -18,6 +18,9 @@ struct Message: Identifiable, Codable, Equatable, Hashable {
     var replyPreview: String? = nil      // краткий текст цитаты
     var editedAt: Date? = nil            // время последнего редактирования
     var forwardedFrom: String? = nil     // ФИО исходного автора при пересылке
+    /// …и его id — чтобы из пузыря открыть карточку. Может не быть у старых
+    /// сообщений: сервер стал сохранять id позже самой пересылки.
+    var forwardedFromId: String? = nil
     var albumId: String? = nil           // несколько фото одной отправкой → один альбом
     var topicId: Int? = nil              // подтема мероприятия (nil = канал «Общий»)
     var geoLat: Double? = nil            // геометка съёмки (юр. инфа)

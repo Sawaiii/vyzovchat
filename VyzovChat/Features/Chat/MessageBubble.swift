@@ -225,9 +225,17 @@ struct MessageBubble: View {
             }
 
             if let from = message.forwardedFrom {
+                // Не Button — по той же причине, что ник и цитата: кнопка внутри
+                // пузыря съедала долгое нажатие, и меню сообщения не открывалось.
                 Label("Переслано от \(from)", systemImage: "arrowshape.turn.up.right.fill")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Theme.accentSecondary)
+                    .foregroundStyle(Theme.bubbleLink)
+                    .contentShape(Rectangle())
+                    // У старых пересылок id автора сервер не сохранял — тогда
+                    // это просто подпись, открывать нечего.
+                    .gesture(tapOrHoldGesture {
+                        if let id = message.forwardedFromId { onOpenProfile(id) }
+                    })
             }
 
             if hasReplyQuote { replyQuote }
@@ -237,7 +245,7 @@ struct MessageBubble: View {
             if let text = message.text, !text.isEmpty {
                 // Текст и время в одной строке снизу — пузырь обнимает контент, без пустот.
                 HStack(alignment: .bottom, spacing: 6) {
-                    Text(MentionText.build(text, people: mentionPeople, color: Theme.accentSecondary))
+                    Text(MentionText.build(text, people: mentionPeople, color: Theme.bubbleLink))
                         .font(Typography.body).foregroundStyle(Theme.textPrimary)
                         // Ссылка у упоминания своя, ненастоящая — перехватываем
                         // её здесь и открываем профиль.
