@@ -427,6 +427,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         messages.append(message)
+        appendedMessageId = message.id
         scheduleReadSync()            // читаем на лету (дебаунс при потоке входящих)
     }
 
@@ -1359,6 +1360,13 @@ final class ChatViewModel: ObservableObject {
 
     /// Куда проматывать ленту с подсветкой (переход из поиска или из цитаты).
     @Published var jumpToMessageId: String?
+
+    /// В открытую ленту ДОБАВИЛОСЬ сообщение — можно доскроллить к нему.
+    ///
+    /// Отдельно от «в ленте стало другое число сообщений»: при смене темы массив
+    /// подменяется целиком, и по одному лишь счётчику лента уезжала в конец на
+    /// каждом свайпе, даже если человек читал середину.
+    @Published var appendedMessageId: String?
 
     // MARK: - Упоминания через @
 

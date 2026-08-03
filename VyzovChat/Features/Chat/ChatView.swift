@@ -151,15 +151,19 @@ struct ChatView: View {
                     )
                 }
 
-                // Закрепы есть и в личной переписке, поэтому полоса живёт
+                // Полоса закрепа лежит ПОВЕРХ ленты, а не над ней. В потоке она
+                // меняла высоту прокрутки при каждом свайпе между темами — где
+                // закреп есть и где его нет, — и лента дёргалась к концу. Плюс
+                // закрепы есть и в личной переписке, поэтому полоса живёт
                 // снаружи блока мероприятия.
-                pinBar
-
-                if model.chat.isDirect || model.topics.isEmpty {
-                    messagesScroll
-                } else {
-                    topicPager
+                Group {
+                    if model.chat.isDirect || model.topics.isEmpty {
+                        messagesScroll
+                    } else {
+                        topicPager
+                    }
                 }
+                .overlay(alignment: .top) { pinBar }
 
                 if !model.mentionSuggestions.isEmpty { mentionBar }
                 if let editing = model.editingMessage { editBar(editing) }
@@ -417,6 +421,7 @@ struct ChatView: View {
 
     private func feed(for topicId: Int?) -> some View {
         let isActive = topicId == model.loadedTopicId
+        let pageKey = topicId.map(String.init) ?? "main"
         let loading = isActive ? model.isLoading : !model.isTopicLoaded(topicId)
         // Готовую ленту берём из модели: она пересобирается только при изменении
         // сообщений/поиска, а не на каждом рендере/нажатии клавиши (было — во вью).
@@ -473,28 +478,37 @@ struct ChatView: View {
                 .modifier(BottomTracking { if isActive { updateAtBottom($0) } })
                 .scrollDismissesKeyboard(.interactively)
                 .simultaneousGesture(TapGesture().onEnded { UIApplication.shared.endEditing() })
+                // Первая загрузка чата: есть непрочитанные — встаём там, где они
+                // начинаются; иначе строго в конце ленты.
                 .onChange(of: model.messages.count) {
-                    guard isActive else { return }
-                    if !didInitialScroll {
-                        didInitialScroll = true
-                        // Есть непрочитанные — встаём там, где они начинаются;
-                        // иначе строго в конце ленты.
-                        settle(proxy, to: model.initialAnchorId ?? Self.bottomAnchor)
-                    } else if let last = model.messages.last {
-                        withAnimation(.smooth) { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
+                    guard isActive, !didInitialScroll else { return }
+                    didInitialScroll = true
+                    settle(proxy, to: model.initialAnchorId ?? Self.bottomAnchor)
+                }
+                // Пришло новое сообщение. Именно ДОБАВИЛОСЬ, а не «в ленте стало
+                // другое число»: при смене темы массив подменяется целиком, и по
+                // счётчику лента уезжала в конец на каждом свайпе. И только если
+                // человек и так внизу — иначе выдёргивали бы из середины.
+                .onChange(of: model.appendedMessageId) {
+                    guard isActive, let id = model.appendedMessageId else { return }
+                    model.appendedMessageId = nil
+                    // Своё сообщение показываем всегда: отправил — жду увидеть.
+                    let mine = model.messages.first { $0.id == id }.map(model.isMine) ?? false
+                    guard isAtBottom || mine else { return }
+                    withAnimation(.smooth) { proxy.scrollTo(id, anchor: .bottom) }
                 }
                 // Стали активной темой — её лента открывается с конца, но ровно
                 // один раз. Раньше доводчик срабатывал на каждый возврат в тему
                 // и швырял ленту в конец, даже если человек читал середину, —
                 // это и был резкий баунс при свайпе туда-обратно.
                 .onChange(of: isActive) {
-                    guard isActive else { return }
-                    let key = topicId.map(String.init) ?? "main"
-                    guard !settledTopics.contains(key) else { return }
-                    settledTopics.insert(key)
+                    guard isActive, !settledTopics.contains(pageKey) else { return }
+                    settledTopics.insert(pageKey)
                     settleAtBottom(proxy)
                 }
+                // Страница, открытая сразу при входе в чат: её доводит
+                // didInitialScroll, и второй раз при возврате не нужно.
+                .onAppear { if isActive { settledTopics.insert(pageKey) } }
                 // Переход из поиска: окно ленты уже загружено, осталось встать
                 // на найденном сообщении и подсветить его.
                 .onChange(of: model.jumpToMessageId) {
@@ -1104,8 +1118,10 @@ struct ChatView: View {
                 }
             }
             // Та же левая линия и тот же шаг по вертикали, что у остальной шапки.
+            // Фон непрозрачный: полоса лежит поверх сообщений, и сквозь неё не
+            // должен просвечивать текст.
             .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
-            .background(Theme.panel.opacity(0.6))
+            .background(Theme.panel)
         }
     }
 
