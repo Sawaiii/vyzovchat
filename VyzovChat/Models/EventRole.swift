@@ -86,13 +86,15 @@ enum EventStage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Названия те же, что сервер пишет в чат («закрыл(а) этап «Приём»») —
+    /// иначе полоса этапов и строка о ней в ленте называют одно разными словами.
     var title: String {
         switch self {
         case .load:      return "Погрузка"
-        case .mount:     return "Приезд"
+        case .mount:     return "Приезд/монтаж"
         case .ready:     return "Готовность"
         case .dismantle: return "Демонтаж"
-        case .accept:    return "Приёмка"
+        case .accept:    return "Приём"
         }
     }
 

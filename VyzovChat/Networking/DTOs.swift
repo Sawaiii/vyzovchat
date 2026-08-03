@@ -292,7 +292,7 @@ enum EquipCheckKind: String, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String { self == .loaded ? "Чеклист погрузки" : "Чеклист приёмки" }
+    var title: String { self == .loaded ? "Чеклист погрузки" : "Чеклист приёма" }
     var stage: String { self == .loaded ? "load" : "accept" }
     var icon: String { self == .loaded ? "shippingbox" : "arrow.down.circle" }
 }
@@ -857,13 +857,20 @@ extension Chat {
 }
 
 extension Message {
-    /// Служебные отметки мероприятия. Сервер шлёт их обычным сообщением от лица
-    /// того, кто нажал, — но это не разговор, а событие, и в ленте оно должно
-    /// стоять строкой по центру, как «добавил участника», а не пузырём.
-    static let noteKinds: Set<String> = ["shift_in", "shift_out", "system"]
+    /// Виды, за которыми стоит содержимое разговора. Всё остальное — служебные
+    /// отметки мероприятия (смены, этапы и то, что сервер заведёт дальше).
+    ///
+    /// Перечисляем именно содержимое, а не служебное: служебных видов
+    /// прибавляется — сначала смены, потом этапы, — и список-белый быстро
+    /// устаревал бы. Уже устарел один раз: этапы приехали `stage_done` и до
+    /// правки рисовались пузырём «Администратор снял(а) отметку с этапа».
+    static let contentKinds: Set<String> = ["text", "image", "video", "audio", "file"]
 
     private static func kind(dto: MessageDTO, hasAttachments: Bool) -> Kind {
-        if noteKinds.contains(dto.kind) { return .system }
+        // Вид содержимого проверяем по самому виду, а не по наличию вложения:
+        // у видео ссылка приходит отдельным кадром позже, и до неё сообщение
+        // ошибочно считалось бы служебным.
+        guard contentKinds.contains(dto.kind) else { return .system }
         return hasAttachments ? .photo : .text
     }
 
