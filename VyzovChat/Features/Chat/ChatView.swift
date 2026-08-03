@@ -35,11 +35,6 @@ struct ChatView: View {
     /// Палец сейчас на микрофоне. Отдельно от «идёт запись»: запись стартует
     /// асинхронно, а кнопка должна реагировать сразу.
     @State private var isPressingMic = false
-    /// Насколько кнопка записи уехала за пальцем.
-    @State private var micDrag: CGSize = .zero
-    /// Палец дошёл до замка — подсвечиваем цель, чтобы было видно, что дальше
-    /// вести не надо.
-    @State private var lockArmed = false
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -1152,36 +1147,6 @@ struct ChatView: View {
         }
     }
 
-    /// Всплывающая панель над кнопкой записи: пока держим — замок, к которому
-    /// ведут палец, после фиксации — пауза.
-    ///
-    /// Замок здесь видимая цель, а не догадка: раньше фиксация была «увести
-    /// палец вверх», и понять, увёл ли достаточно, было неоткуда.
-    @ViewBuilder
-    private var floatingPanel: some View {
-        if model.isRecordingLocked {
-            Button { model.togglePause() } label: {
-                Image(systemName: model.isRecordingPaused ? "mic.fill" : "pause.fill")
-                    .font(.headline).foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.panel2, in: Circle())
-            }
-            .offset(y: -52)
-        } else {
-            VStack(spacing: 6) {
-                Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(lockArmed ? Theme.accent : Theme.textSecondary)
-            .frame(width: 40, height: 72)
-            .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .animation(.easeOut(duration: 0.15), value: lockArmed)
-            .offset(y: -64)
-        }
-    }
-
     private var hasDraft: Bool { !model.draft.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// Запись голосового удержанием, как в мессенджерах: держим — пишем,
@@ -1191,87 +1156,23 @@ struct ChatView: View {
     /// появляется пауза, а отмена — обычной кнопкой в строке. На площадке в
     /// перчатках жест срывается, и без этого запасного пути записанное
     /// терялось бы.
+    ///
+    /// Сама кнопка — отдельная вью: палец двигает её десятки раз в секунду, и
+    /// держи мы смещение здесь, каждый кадр жеста перерисовывал бы весь чат.
     private var micButton: some View {
-        // После фиксации круг перестаёт быть микрофоном и становится отправкой:
-        // запись уже идёт сама, держать нечего.
-        Image(systemName: model.isRecordingLocked ? "arrow.up" : "mic.fill")
-            .font(.headline).foregroundStyle(.white)
-            .frame(width: 40, height: 40)
-            .background(Theme.accent, in: Circle())
-            // Растёт под пальцем, как в мессенджерах: видно, что жест поймался.
-            .scaleEffect(isPressingMic ? 1.6 : 1)
-            // Ореол — уже поверх выросшего круга, поэтому и рисуется после
-            // увеличения: иначе он множился бы на масштаб и залил пол-экрана.
-            .background {
-                if isPressingMic {
-                    ZStack {
-                        Circle().fill(Theme.accent.opacity(0.10)).scaleEffect(2.6)
-                        Circle().fill(Theme.accent.opacity(0.16)).scaleEffect(1.95)
-                    }
-                }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isPressingMic)
-            .contentShape(Rectangle())
-            // Круг едет за пальцем к замку. Смещение не меняет место в лейауте,
-            // поэтому сам замок остаётся стоять — к нему и ведут.
-            .offset(micDrag)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        // Зафиксированную запись жест не трогает: круг стал
-                        // обычной кнопкой «отправить».
-                        guard !model.isRecordingLocked else { return }
-                        if !isPressingMic {
-                            isPressingMic = true
-                            lockArmed = false
-                            Task { await model.startRecording() }
-                        }
-                        let dx = max(min(0, value.translation.width), -80)
-                        let dy = max(min(0, value.translation.height), -70)
-                        micDrag = CGSize(width: dx, height: dy)
-                        // Вверх до замка — фиксируем, влево — отменяем.
-                        if dy < -lockDistance {
-                            model.isRecordingLocked = true
-                            isPressingMic = false
-                            lockArmed = false
-                            micDrag = .zero
-                            Haptics.success()
-                        } else if value.translation.width < -80 {
-                            isPressingMic = false
-                            lockArmed = false
-                            micDrag = .zero
-                            Task { await model.cancelRecording() }
-                        } else {
-                            lockArmed = dy < -25
-                        }
-                    }
-                    .onEnded { value in
-                        micDrag = .zero
-                        lockArmed = false
-                        if model.isRecordingLocked {
-                            // Касание по кругу отправляет. Смазанное касание —
-                            // это уже прокрутка чего-то другого, не отправка.
-                            if abs(value.translation.width) < 12,
-                               abs(value.translation.height) < 12 {
-                                Task { await model.finishRecording() }
-                            }
-                            return
-                        }
-                        guard isPressingMic else { return }
-                        isPressingMic = false
-                        // Ждём внутри модели: короткое нажатие могло отпуститься
-                        // раньше, чем запись успела начаться.
-                        Task { await model.finishRecording() }
-                    }
-            )
-            .overlay(alignment: .bottom) {
-                if isRecordingUI { floatingPanel }
-            }
+        MicRecordButton(
+            pressing: $isPressingMic,
+            isLocked: model.isRecordingLocked,
+            isActive: isRecordingUI,
+            isPaused: model.isRecordingPaused,
+            onStart: { Task { await model.startRecording() } },
+            onLock: { model.isRecordingLocked = true },
+            onCancel: { Task { await model.cancelRecording() } },
+            // Ждём внутри модели: короткое нажатие могло отпуститься раньше,
+            // чем запись успела начаться.
+            onFinish: { Task { await model.finishRecording() } },
+            onTogglePause: { model.togglePause() })
     }
-
-    /// Насколько вести палец вверх до фиксации. Ровно до замка: он висит на
-    /// этом же расстоянии, и «дошёл до иконки» должно значить «сработало».
-    private let lockDistance: CGFloat = 64
 
     private var textInputBar: some View {
         HStack(spacing: Spacing.s) {

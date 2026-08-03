@@ -205,11 +205,15 @@ struct DashboardView: View {
                     FlowLayout(spacing: 4) {
                         Text("Главный:").font(.caption2).foregroundStyle(Theme.textSecondary)
                         ForEach(admins) { admin in
+                            // Заливка и обводка акцентом: на общем сером фоне
+                            // карточки старший должен читаться сразу, а не
+                            // сливаться с остальными плашками.
                             Label(admin.fio, systemImage: "person.fill")
-                                .font(.system(size: 10))
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(Theme.accent)
-                                .padding(.horizontal, 6).padding(.vertical, 3)
-                                .background(Theme.panel2, in: Capsule())
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Theme.accent.opacity(0.16), in: Capsule())
+                                .overlay(Capsule().stroke(Theme.accent.opacity(0.45), lineWidth: 1))
                         }
                     }
                 }
