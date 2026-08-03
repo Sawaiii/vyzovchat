@@ -195,6 +195,18 @@ struct ChatView: View {
                                  onTap: openOtherProfile)
                 }
             }
+            // Смены — отдельной кнопкой, а не пунктом меню: отметиться на месте
+            // выездник должен в одно касание, а не вспоминать, что это спрятано
+            // за многоточием. Остальное меню держим одним пунктом (см. ниже),
+            // так что кнопок в тулбаре по-прежнему две и переполнение не грозит.
+            if !model.chat.isDirect {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showShifts = true } label: {
+                        Image(systemName: "clock.badge.checkmark")
+                    }
+                    .accessibilityLabel("Смены")
+                }
+            }
             // Одно меню вместо россыпи кнопок: их набралось до шести, система
             // прятала лишние в своё переполнение — то самое «троеточие, которое
             // ничего не делает». Заодно совпадает с бургером в веб-версии.
@@ -202,8 +214,7 @@ struct ChatView: View {
                 Menu {
                     Button { showGallery = true } label: { Label("Медиа чата", systemImage: "photo.stack") }
                     if !model.chat.isDirect {
-                        // Смена — основное действие выездника, держим первым.
-                        Button { showShifts = true } label: { Label("Смены", systemImage: "clock.badge.checkmark") }
+                        // Смен здесь нет — они вынесены отдельной кнопкой рядом.
                         Button { showEventInfo = true } label: { Label("О мероприятии", systemImage: "info.circle") }
                         Button { showMembers = true } label: { Label("Участники", systemImage: "person.2.fill") }
                         // Отбор фото ведёт админ чата и старший; отправку в
