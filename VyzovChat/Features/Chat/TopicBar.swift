@@ -13,6 +13,10 @@ struct TopicBar: View {
     let onCreate: () -> Void
     let onEditAccess: (TopicDTO) -> Void
     let onDelete: (TopicDTO) -> Void
+    /// Тему можно заглушить отдельно от мероприятия — например, шумную
+    /// «Ущерб», пока сам занят другим. Хранится на сервере.
+    var onToggleMute: ((TopicDTO) -> Void)?
+    var isTopicMuted: ((TopicDTO) -> Bool)?
 
     @Namespace private var topicPill
 
@@ -25,6 +29,13 @@ struct TopicBar: View {
                     ForEach(topics) { topic in
                         chip(title: topic.name, id: topic.id, isPrivate: topic.isPrivate)
                             .contextMenu {
+                                if let onToggleMute {
+                                    let muted = isTopicMuted?(topic) ?? false
+                                    Button { onToggleMute(topic) } label: {
+                                        Label(muted ? "Включить звук" : "Без звука",
+                                              systemImage: muted ? "bell.fill" : "bell.slash.fill")
+                                    }
+                                }
                                 if canManage {
                                     Button { onEditAccess(topic) } label: {
                                         Label("Кому видна", systemImage: "lock")

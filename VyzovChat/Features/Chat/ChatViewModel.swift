@@ -714,6 +714,20 @@ final class ChatViewModel: ObservableObject {
         return a < b ? "\(a)-\(b)" : "\(b)-\(a)"
     }
 
+    // MARK: - Без звука
+
+    /// Тема заглушена — отдельно от мероприятия целиком.
+    func isTopicMuted(_ topicId: Int) -> Bool {
+        guard let event = Int(chat.dealId) else { return false }
+        return MuteStore.topics.contains(MuteStore.topicKey(event: event, topic: topicId))
+    }
+
+    func toggleTopicMute(_ topicId: Int) async {
+        guard let event = Int(chat.dealId) else { return }
+        await MuteStore.setMuted(!isTopicMuted(topicId), event: event, topic: topicId)
+        Haptics.selection()
+    }
+
     func reloadTopics() async {
         guard !chat.isDirect else { return }
         topics = await service.fetchTopics(dealId: chat.dealId)
@@ -1207,12 +1221,26 @@ final class ChatViewModel: ObservableObject {
     /// (наружу отдаются только временные подписанные ссылки), поэтому переслать
     /// вложение, отправив его заново, физически невозможно. Заодно сервер сам
     /// сохраняет исходного автора и целиком переносит альбом.
-    func forward(_ message: Message, to target: Chat) async {
-        guard useRealtime, !target.isDirect, let eventId = Int(target.dealId) else { return }
-        _ = try? await APIClient.shared.post(
-            "/api/messages/\(message.id)/forward",
-            json: ForwardMessageRequest(event_id: eventId, topic_id: nil),
-            as: OKDTO.self)
+    func forward(_ message: Message, to target: ForwardTarget) async {
+        guard useRealtime else { return }
+        let request: ForwardMessageRequest
+        switch target {
+        case .chat(let chat):
+            // Личный чат адресуем собеседником: у переписки нет своего id,
+            // сервер собирает ключ сам.
+            if chat.isDirect {
+                guard let peer = chat.otherUserId, let workerId = Int(peer) else { return }
+                request = ForwardMessageRequest(worker_id: workerId)
+            } else {
+                guard let eventId = Int(chat.dealId) else { return }
+                request = ForwardMessageRequest(event_id: eventId)
+            }
+        case .person(let user):
+            guard let workerId = Int(user.id) else { return }
+            request = ForwardMessageRequest(worker_id: workerId)
+        }
+        _ = try? await APIClient.shared.post("/api/messages/\(message.id)/forward",
+                                             json: request, as: OKDTO.self)
         Haptics.success()
     }
 

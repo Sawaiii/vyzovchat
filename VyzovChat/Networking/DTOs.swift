@@ -558,9 +558,24 @@ struct MessageDTO: Decodable {
 
 struct EditMessageRequest: Encodable { let body: String }
 
-struct ForwardMessageRequest: Encodable {
+/// Чат без звука. `topic_id` пуст — заглушено мероприятие целиком.
+struct MuteDTO: Decodable {
     let event_id: Int
     let topic_id: Int?
+}
+
+struct SetMuteRequest: Encodable {
+    let event_id: Int
+    let topic_id: Int?
+    let muted: Bool
+}
+
+/// Куда пересылаем: либо мероприятие (`event_id`), либо личная переписка
+/// (`worker_id`). Сервер ждёт ровно одно из двух.
+struct ForwardMessageRequest: Encodable {
+    var event_id: Int? = nil
+    var topic_id: Int? = nil
+    var worker_id: Int? = nil
 }
 
 // MARK: - Прочитанность

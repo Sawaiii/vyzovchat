@@ -545,7 +545,9 @@ final class RealtimeService: ObservableObject {
         guard msg.senderId != currentUserId else { return }   // не своё
         guard msg.chatId != activeChatId else { return }       // не открытый сейчас чат
         // Упоминание пробивает «без звука»: его как раз и ждут адресно.
-        guard mentioned || !MuteStore.isMuted(msg.chatId) else { return }
+        // Проверяем сообщение, а не чат: тема могла быть заглушена отдельно от
+        // мероприятия. Упоминание пробивает «без звука» — его как раз и ждут адресно.
+        guard mentioned || !MuteStore.isMuted(msg) else { return }
         let repliedToMe = msg.replySender != nil && msg.replySender == currentUserFio
         let title = msg.senderName ?? "Новое сообщение"
         let prefix = mentioned ? "упомянул(а) вас: " : (repliedToMe ? "ответил(а) вам: " : "")

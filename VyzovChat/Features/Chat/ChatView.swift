@@ -134,7 +134,11 @@ struct ChatView: View {
                         onSelect: { id in Task { await model.selectTopic(id) } },
                         onCreate: { showCreateTopic = true },
                         onEditAccess: { topic in editingTopic = topic },
-                        onDelete: { topic in Task { await model.deleteTopic(topic.id) } }
+                        onDelete: { topic in Task { await model.deleteTopic(topic.id) } },
+                        onToggleMute: { topic in
+                            Task { await model.toggleTopicMute(topic.id) }
+                        },
+                        isTopicMuted: { topic in model.isTopicMuted(topic.id) }
                     )
                 }
 

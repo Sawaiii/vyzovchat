@@ -272,7 +272,9 @@ struct ChatRow: View {
         .onAppear { muted = MuteStore.isMuted(chat.id) }
         .contextMenu {
             Button {
-                muted = MuteStore.toggle(chat.id)
+                // У мероприятия «без звука» хранится на сервере: иначе выключил
+                // с телефона, а с компьютера всё равно звенит.
+                Task { muted = await MuteStore.toggle(chat.id) }
             } label: {
                 Label(muted ? "Включить звук" : "Без звука",
                       systemImage: muted ? "bell.fill" : "bell.slash.fill")

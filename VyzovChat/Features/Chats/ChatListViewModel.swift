@@ -41,7 +41,10 @@ final class ChatListViewModel: ObservableObject {
         // Быстрая фаза: списки появляются сразу (без ожидания истории каждого чата).
         async let events = session.chats.fetchChats(for: user)
         async let dms = session.chats.fetchDMChats(for: user)
-        let (ev, dm) = await (events, dms)
+        // «Без звука» живёт на сервере — забираем вместе со списками, чтобы
+        // заглушённое с компьютера не звенело на телефоне.
+        async let mutes: Void = MuteStore.sync()
+        let (ev, dm, _) = await (events, dms, mutes)
         // Сливаем со старыми: быстрая фаза приходит без превью, и без слияния
         // список на миг терял текст последнего сообщения и даты.
         eventChats = merged(ev, with: eventChats)
