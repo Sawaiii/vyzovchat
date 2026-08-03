@@ -919,6 +919,7 @@ extension Message {
         self.reactions = (dto.reactions ?? []).map {
             Reaction(emoji: $0.emoji, workerId: String($0.worker_id))
         }
+        self.systemKind = Self.contentKinds.contains(dto.kind) ? nil : dto.kind
         self.replyToId = dto.reply_to.map(String.init)
         if let r = dto.reply {
             self.replySender = r.sender_fio

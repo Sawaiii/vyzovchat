@@ -26,6 +26,10 @@ struct Message: Identifiable, Codable, Equatable, Hashable {
     var geoLat: Double? = nil            // геометка съёмки (юр. инфа)
     var geoLng: Double? = nil
     var inPhotobank: Bool = false        // фото уже забрано в фотобанк
+    /// Какое именно событие за служебной строкой: shift_in, stage_done и т.д.
+    /// Вид с сервера сохраняем — по нему строка красится, иначе все события
+    /// мероприятия выглядели бы одинаково серыми.
+    var systemKind: String? = nil
 
     enum Kind: String, Codable {
         case text

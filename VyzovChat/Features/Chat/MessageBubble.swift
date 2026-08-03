@@ -399,14 +399,31 @@ struct MessageBubble: View {
         }
     }
 
+    /// Чем строка выделяется. Приезд на площадку — единственное зелёное: его
+    /// ждут и высматривают в ленте, остальные события мероприятия спокойнее.
+    private var systemStyle: (color: Color, icon: String) {
+        switch message.systemKind {
+        case "shift_in":     return (Theme.success, "clock.badge.checkmark")
+        case "shift_out":    return (Theme.textSecondary, "checkmark.seal")
+        case "stage_done":   return (Theme.accent, "checkmark.circle.fill")
+        case "stage_undone": return (Theme.textSecondary, "arrow.uturn.backward")
+        default:             return (Theme.textSecondary, "info.circle")
+        }
+    }
+
     private var systemBubble: some View {
-        Text(message.text ?? "")
-            .font(Typography.caption).foregroundStyle(Theme.textSecondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, Spacing.s).padding(.vertical, 6)
-            .background(Theme.panel.opacity(0.7), in: Capsule())
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.xs)
+        let style = systemStyle
+        return HStack(spacing: 6) {
+            Image(systemName: style.icon).font(.system(size: 11, weight: .semibold))
+            Text(message.text ?? "")
+                .font(Typography.caption)
+                .multilineTextAlignment(.leading)
+        }
+        .foregroundStyle(style.color)
+        .padding(.horizontal, Spacing.s).padding(.vertical, 6)
+        .background(style.color.opacity(0.14), in: Capsule())
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xs)
     }
 
     private func byteText(_ bytes: Int) -> String {
