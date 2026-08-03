@@ -108,23 +108,28 @@ struct ChatView: View {
             chatBackground
             VStack(spacing: 0) {
                 if !model.chat.isDirect {
-                    VStack(alignment: .leading, spacing: 4) {
+                    // Шапка — один блок с общим фоном и общим шагом по
+                    // вертикали: раньше каждая полоса несла свои отступы, и они
+                    // складывались в разнобой.
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         HStack(spacing: 6) {
                             if let company = model.chat.company {
                                 CompanyBadge(name: company, compact: false)
                             }
                             StatusBadgesRow(badges: model.chat.statusBadges)
                         }
-                        eventTimeLine
-                    }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Spacing.m)
-                        .padding(.vertical, 6)
-                        .background(Theme.panel.opacity(0.6))
 
-                    // Дорожка этапов — над темами: она про мероприятие целиком,
-                    // а темы уже про переписку внутри него.
-                    StagesTrack(model: model) { kind in checklistKind = kind }
+                        eventTimeLine
+                            .padding(.horizontal, Spacing.m)
+
+                        // Дорожка этапов — над темами: она про мероприятие
+                        // целиком, а темы уже про переписку внутри него.
+                        StagesTrack(model: model) { kind in checklistKind = kind }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Theme.panel.opacity(0.6))
 
                     TopicBar(
                         topics: model.topics,
@@ -1051,7 +1056,7 @@ struct ChatView: View {
     private var pinBar: some View {
         if let pinned = model.pinned {
             HStack(spacing: Spacing.s) {
-                Rectangle().fill(Theme.accent).frame(width: 3, height: 30)
+                Capsule().fill(Theme.accent).frame(width: 3, height: 28)
                 Button {
                     Task { await model.goToPinned() }
                 } label: {
@@ -1080,12 +1085,13 @@ struct ChatView: View {
                     Button { Task { await model.unpin() } } label: {
                         Image(systemName: "xmark").font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 32, height: 32).contentShape(Rectangle())
+                            .frame(width: 28, height: 28).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, Spacing.s).padding(.vertical, 5)
+            // Та же левая линия и тот же шаг по вертикали, что у остальной шапки.
+            .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
             .background(Theme.panel.opacity(0.6))
         }
     }

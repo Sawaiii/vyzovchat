@@ -57,8 +57,9 @@ struct TopicBar: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(3)
-                .background(Theme.panel2, in: Capsule())
+                // Общей подложки под чипами нет: она тянулась вместе с прокруткой
+                // и обрезалась на краю экрана — будто полоса к чему-то приклеена.
+                // Выбранная тема и так выделена своей капсулой.
                 // Анимируем здесь: тему меняют и тапом, и свайпом ленты.
                 .animation(.smooth(duration: 0.25), value: selected)
                 // Тему могли выбрать свайпом ленты — подтягиваем её в видимую часть.
@@ -70,7 +71,7 @@ struct TopicBar: View {
             }
             // Та же линия, что у бейджей, даты и этапов выше.
             .padding(.horizontal, Spacing.m)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .background(Theme.panel.opacity(0.6))

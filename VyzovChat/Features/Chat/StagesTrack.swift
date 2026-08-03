@@ -12,18 +12,17 @@ struct StagesTrack: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
+            HStack(spacing: 8) {
                 ForEach(Array(EventStage.allCases.enumerated()), id: \.element) { index, stage in
                     if index > 0 { arrow(before: stage) }
                     step(stage, number: index + 1)
                 }
             }
-            // У шага свой отступ в 8 — чтобы кружок первого этапа встал на ту же
-            // линию, что бейджи и дата выше, снаружи остаётся ровно остаток.
-            .padding(.horizontal, Spacing.m - 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Spacing.m)
         }
-        .background(Theme.panel.opacity(0.6))
+        // Фон даёт общая шапка: своя подложка у каждой полосы и превращала
+        // шапку в стопку приклеенных друг к другу полосок.
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 
     private func arrow(before stage: EventStage) -> some View {
@@ -57,9 +56,10 @@ struct StagesTrack: View {
                         .foregroundStyle(counterIsFull(stage) ? Theme.success : Theme.textSecondary)
                 }
             }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(isNext ? Theme.accent.opacity(0.14) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // Подложки у текущего шага нет: она вылезала левее общей линии, и
+            // первый этап выглядел сдвинутым относительно всего остального.
+            // Текущий и так виден — синим кружком и жирной подписью.
+            .padding(.vertical, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

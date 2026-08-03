@@ -491,8 +491,10 @@ final class ChatViewModel: ObservableObject {
         loadedTopicId = id
         selectedTopicId = id
         lastMarkedRead = 0
-        // Закрепы у каждой вкладки свои — чужие не показываем ни секунды.
-        setPins([])
+        // Закрепы у каждой вкладки свои. Если тема уже открывалась — берём её
+        // полосу из кэша сразу, без мигания; если нет — пусто до ответа сервера.
+        pins = pinsByTopic[topicKey(id)] ?? []
+        pinIndex = max(0, pins.count - 1)
         // Спиннер — только если про тему вообще ничего не знаем. Пустой КЭШ значит
         // «в теме нет сообщений», и показывать на секунду загрузку, чтобы затем
         // сказать «сообщений нет», — лишнее мельтешение.
@@ -616,9 +618,17 @@ final class ChatViewModel: ObservableObject {
     /// заведомо отказное действие.
     var canPin: Bool { chat.isDirect || isChatAdmin }
 
-    private func setPins(_ list: [Message]) {
+    /// Закрепы по темам — чтобы при листании полоса не мигала.
+    ///
+    /// Без кэша каждая смена темы гасила полосу и ждала ответа сервера: она
+    /// пропадала и возвращалась, а вместе с ней прыгала высота шапки — это и
+    /// выглядело как «чат глючит при свайпе».
+    private var pinsByTopic: [String: [Message]] = [:]
+
+    private func setPins(_ list: [Message], remember: Bool = true) {
         pins = list
         pinIndex = max(0, list.count - 1)   // по умолчанию показываем самый свежий
+        if remember, !chat.isDirect { pinsByTopic[topicKey(loadedTopicId)] = list }
     }
 
     /// Сообщение удалили — цитаты на него больше ни на что не ведут.
@@ -638,6 +648,25 @@ final class ChatViewModel: ObservableObject {
     private func dropPin(_ id: String) {
         guard pins.contains(where: { $0.id == id }) else { return }
         setPins(pins.filter { $0.id != id })
+    }
+
+    /// Закрепы остальных тем — заранее, как и их ленты: тогда первый же свайп
+    /// показывает полосу сразу, а не подмигивает ею через полсекунды.
+    private func prefetchPins() async {
+        guard !chat.isDirect else { return }
+        let pending: [(id: Int?, key: String)] = topicPages
+            .filter { pinsByTopic[topicKey($0)] == nil }
+            .map { (id: $0, key: topicKey($0)) }
+        guard !pending.isEmpty else { return }
+        let dealId = chat.dealId
+        await withTaskGroup(of: (String, [Message]).self) { group in
+            for item in pending {
+                group.addTask { [service] in
+                    (item.key, await service.pinnedMessages(dealId: dealId, topicId: item.id))
+                }
+            }
+            for await (key, list) in group { pinsByTopic[key] = list }
+        }
     }
 
     func loadPins() async {
@@ -996,6 +1025,7 @@ final class ChatViewModel: ObservableObject {
             // человек свайпнёт, они обычно уже готовы.
             try? await Task.sleep(for: .milliseconds(400))
             await self.prefetchTopics()
+            await self.prefetchPins()
         }
     }
 
