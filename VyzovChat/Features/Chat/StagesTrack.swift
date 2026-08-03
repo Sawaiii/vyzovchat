@@ -87,6 +87,14 @@ struct StagesTrack: View {
                     Label(kind.title, systemImage: kind.icon)
                 }
             }
+            // Этап не мой — говорим, чей он. Иначе меню без единого действия
+            // выглядит как поломка, хотя это правило прав.
+            if !model.canMark(stage) && !model.canUndo(stage) {
+                Button {} label: {
+                    Label("Этап закрывает \(stage.owner)", systemImage: "info.circle")
+                }
+                .disabled(true)
+            }
         }
     }
 

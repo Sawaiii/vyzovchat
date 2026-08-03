@@ -135,8 +135,10 @@ struct EquipChecklistView: View {
                 .font(Typography.callout)
                 .foregroundStyle(checked == items.count ? Theme.success : Theme.textPrimary)
             Spacer()
+            // Не «только просмотр», а почему: галочки ставит склад, и без
+            // объяснения неактивные строки выглядят как поломка.
             if !canCheck {
-                Text("только просмотр").font(.caption2).foregroundStyle(Theme.textSecondary)
+                Text("отмечает кладовщик").font(.caption2).foregroundStyle(Theme.textSecondary)
             }
         }
         .padding(Spacing.s)

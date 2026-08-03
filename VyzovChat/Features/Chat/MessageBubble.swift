@@ -407,6 +407,10 @@ struct MessageBubble: View {
         case "shift_out":    return (Theme.textSecondary, "checkmark.seal")
         case "stage_done":   return (Theme.accent, "checkmark.circle.fill")
         case "stage_undone": return (Theme.textSecondary, "arrow.uturn.backward")
+        // Состав: кого добавили, кто пришёл по ссылке, кому сменили роль.
+        case "member_add", "member_join": return (Theme.textSecondary, "person.badge.plus")
+        case "member_out":                return (Theme.textSecondary, "person.badge.minus")
+        case "member_role":               return (Theme.textSecondary, "person.crop.circle.badge.checkmark")
         default:             return (Theme.textSecondary, "info.circle")
         }
     }

@@ -1054,10 +1054,24 @@ final class ChatViewModel: ObservableObject {
     /// Открываем на первом непрочитанном ЧУЖОМ сообщении. Своих непрочитанных
     /// не бывает, а если непрочитанных нет — anchor пуст, и чат откроется в конце.
     private func applyAnchor(lastRead: Int) {
-        initialAnchorId = messages.first {
+        let anchor = messages.first {
             (Int($0.id) ?? 0) > lastRead && $0.senderId != currentUserId
         }?.id
+        // Встаём на первом непрочитанном, только если после него есть чем
+        // заполнить экран. Иначе лента прокручивалась так, чтобы поставить его
+        // ПОД шапку, упиралась в конец содержимого и повисала с пустотой внизу —
+        // ровно до первого касания, после которого прокрутка вставала на место.
+        guard let anchor, let idx = messages.firstIndex(where: { $0.id == anchor }),
+              messages.count - idx >= Self.anchorTailMin else {
+            initialAnchorId = nil
+            return
+        }
+        initialAnchorId = anchor
     }
+
+    /// Сколько сообщений должно остаться под якорем, чтобы прокрутка к нему
+    /// была осмысленной. Меньше — открываем просто в конце ленты.
+    private static let anchorTailMin = 8
 
     // MARK: - Отправка
 
