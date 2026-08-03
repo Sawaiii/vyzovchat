@@ -35,6 +35,8 @@ struct ChatView: View {
     /// Палец сейчас на микрофоне. Отдельно от «идёт запись»: запись стартует
     /// асинхронно, а кнопка должна реагировать сразу.
     @State private var isPressingMic = false
+    /// Открытый чеклист оборудования: погрузка или приёмка.
+    @State private var checklistKind: EquipCheckKind?
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -49,6 +51,11 @@ struct ChatView: View {
     private var pinErrorBinding: Binding<Bool> {
         Binding(get: { model.pinError != nil },
                 set: { if !$0 { model.pinError = nil } })
+    }
+
+    private var stageErrorBinding: Binding<Bool> {
+        Binding(get: { model.stageError != nil },
+                set: { if !$0 { model.stageError = nil } })
     }
 
     /// Дата и время мероприятия в шапке чата.
@@ -115,6 +122,10 @@ struct ChatView: View {
                         .padding(.vertical, 6)
                         .background(Theme.panel.opacity(0.6))
 
+                    // Дорожка этапов — над темами: она про мероприятие целиком,
+                    // а темы уже про переписку внутри него.
+                    StagesTrack(model: model) { kind in checklistKind = kind }
+
                     TopicBar(
                         topics: model.topics,
                         selected: model.selectedTopicId,
@@ -178,8 +189,9 @@ struct ChatView: View {
                         Button { showShifts = true } label: { Label("Смены", systemImage: "clock.badge.checkmark") }
                         Button { showEventInfo = true } label: { Label("О мероприятии", systemImage: "info.circle") }
                         Button { showMembers = true } label: { Label("Участники", systemImage: "person.2.fill") }
-                        // Отчёт — только админ чата и пока мероприятие не завершено.
-                        if model.isChatAdmin && model.chat.isPhotoReportOpen {
+                        // Отбор фото ведёт админ чата и старший; отправку в
+                        // «Отчёт» и «Фотобанк» внутри увидит только админ.
+                        if model.canPickPhotos && model.chat.isPhotoReportOpen {
                             Button { showPhotoReport = true } label: {
                                 Label("Отчёт", systemImage: "camera.badge.ellipsis")
                             }
@@ -209,24 +221,40 @@ struct ChatView: View {
         } message: {
             Text(model.pinError ?? "")
         }
+        .alert("Этап", isPresented: stageErrorBinding) {
+            Button("Понятно", role: .cancel) { model.stageError = nil }
+        } message: {
+            Text(model.stageError ?? "")
+        }
+        .sheet(item: $checklistKind) { kind in
+            EquipChecklistView(dealId: model.chat.dealId,
+                               kind: kind,
+                               canCheck: model.canCheckEquipment) {
+                Task { await model.loadStages() }
+            }
+        }
         .sheet(isPresented: $showEventInfo) {
             EventInfoView(dealId: model.chat.dealId,
                           eventTitle: model.chat.title,
                           isChatAdmin: model.isChatAdmin,
                           canInvite: model.canInvite,
+                          canDocs: model.canDocs,
+                          canClaims: model.canClaims,
                           claimTopicId: model.claimTopicId)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showShifts) {
             EventShiftsView(dealId: model.chat.dealId,
                             eventTitle: model.chat.title,
-                            isChatAdmin: model.isChatAdmin)
+                            isChatAdmin: model.isChatAdmin,
+                            canCheckin: model.canCheckin)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showMembers) {
             // Управление участниками — только глобальный админ.
             ChatMembersView(dealId: model.chat.dealId, chatTitle: model.chat.title,
-                            canManage: isAdmin)
+                            canManage: model.isChatAdmin,
+                            canAssignRoles: model.canAssignRoles)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showGallery) {

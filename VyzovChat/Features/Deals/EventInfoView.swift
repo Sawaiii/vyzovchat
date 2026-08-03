@@ -9,6 +9,10 @@ struct EventInfoView: View {
     let eventTitle: String
     let isChatAdmin: Bool
     let canInvite: Bool
+    /// Документы (акты) правит ещё и старший.
+    var canDocs: Bool = false
+    /// Претензии — старший и кладовщик: он принимает оборудование обратно.
+    var canClaims: Bool = false
     /// Подтема «Претензия» — туда уходит комментарий при урегулировании.
     var claimTopicId: Int?
     /// Фото с мероприятия запрещено использовать (галочка ниже).
@@ -64,11 +68,13 @@ struct EventInfoView: View {
             .task { await load() }
             .refreshable { await load() }
             .sheet(isPresented: $showDocuments) {
-                EventDocumentsView(dealId: dealId, isChatAdmin: isChatAdmin)
+                // Правит не только админ чата: акты ведёт и старший.
+                EventDocumentsView(dealId: dealId, isChatAdmin: isChatAdmin || canDocs)
                     .environmentObject(session)
             }
             .sheet(isPresented: $showClaims) {
-                ClaimsView(dealId: dealId, isChatAdmin: isChatAdmin, claimTopicId: claimTopicId)
+                ClaimsView(dealId: dealId, isChatAdmin: isChatAdmin || canClaims,
+                           claimTopicId: claimTopicId)
                     .environmentObject(session)
             }
         }
@@ -175,11 +181,11 @@ struct EventInfoView: View {
 
                 HStack(spacing: Spacing.xs) {
                     inviteButton(title: "Подрядчик", role: "member")
-                    // Менеджера и склад заводит только админ чата: их права шире,
-                    // чем у куратора, и сервер понизил бы роль до подрядчика.
+                    // Ссылок ровно две: подрядчик и склад. Кладовщика зовёт
+                    // только админ чата — куратору сервер понизил бы роль до
+                    // подрядчика, и кнопка врала бы.
                     if isChatAdmin {
-                        inviteButton(title: "Менеджер", role: "manager")
-                        inviteButton(title: "Склад", role: "warehouse")
+                        inviteButton(title: "Кладовщик", role: "storekeeper")
                     }
                 }
             }

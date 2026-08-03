@@ -130,20 +130,26 @@ struct ReportView: View {
                 }
             }
 
-            PrimaryButton(title: "Отправить отчёт", icon: "paperplane.fill",
-                          isLoading: busy == "report",
-                          isEnabled: !model.pickedIds.isEmpty && busy == nil) {
-                run("report", label: "Отчёт отправлен")
+            // «Отчёт» и «Фотобанк» — только админу чата: старший отбирает фото,
+            // но раздавать их наружу не его дело. Так же решает и сервер.
+            if model.canPickForReport {
+                PrimaryButton(title: "Отправить отчёт", icon: "paperplane.fill",
+                              isLoading: busy == "report",
+                              isEnabled: !model.pickedIds.isEmpty && busy == nil) {
+                    run("report", label: "Отчёт отправлен")
+                }
             }
 
             // Тот же набор действий, что и в вебе: фотобанк, документы,
             // претензия и юр-инфо рядом с отправкой отчёта.
             HStack(spacing: Spacing.s) {
-                SecondaryButton(title: "Фотобанк", icon: "photo.stack") {
-                    run("photobank", label: "Выгружено в фотобанк")
+                if model.canPickForReport {
+                    SecondaryButton(title: "Фотобанк", icon: "photo.stack") {
+                        run("photobank", label: "Выгружено в фотобанк")
+                    }
+                    .disabled(model.pickedIds.isEmpty || busy != nil)
+                    .opacity(model.pickedIds.isEmpty || busy != nil ? 0.5 : 1)
                 }
-                .disabled(model.pickedIds.isEmpty || busy != nil)
-                .opacity(model.pickedIds.isEmpty || busy != nil ? 0.5 : 1)
 
                 SecondaryButton(title: busy == "legal" ? "Отправка…" : "Юр-инфо",
                                 icon: "mappin.and.ellipse") {

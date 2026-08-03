@@ -6,6 +6,10 @@ struct ChatMembersView: View {
     let dealId: String
     let chatTitle: String
     var canManage: Bool = false
+    /// Раздавать роли в чате может не админ чата, а владелец, руководитель или
+    /// реализатор своей компании — это отдельное право, сервер шлёт его в
+    /// `me_rights.assign`.
+    var canAssignRoles: Bool = false
 
     @EnvironmentObject private var session: AppSession
     @ObservedObject private var realtime = RealtimeService.shared
@@ -28,19 +32,21 @@ struct ChatMembersView: View {
                                 NavigationLink { UserProfileView(user: user) } label: { row(user) }
                                     .buttonStyle(PressableStyle())
                                     .contextMenu {
-                                        if canManage {
-                                            Button {
-                                                setRole(user, admin: user.eventRole != "admin")
-                                            } label: {
-                                                Label(user.eventRole == "admin" ? "Снять админа чата" : "Сделать админом чата",
-                                                      systemImage: user.eventRole == "admin" ? "person.badge.minus" : "star.fill")
-                                            }
-                                            if user.id != session.currentUser?.id {
-                                                Button(role: .destructive) {
-                                                    remove(user)
-                                                } label: {
-                                                    Label("Удалить из мероприятия", systemImage: "person.badge.minus")
+                                        // Ролей теперь пять, и они про то, кто какой
+                                        // кусок работы закрывает, — переключателем
+                                        // «админ / не админ» это уже не описать.
+                                        if canAssignRoles {
+                                            Picker("Роль в мероприятии", selection: roleBinding(user)) {
+                                                ForEach(EventRole.allCases) { role in
+                                                    Label(role.title, systemImage: role.icon).tag(role)
                                                 }
+                                            }
+                                        }
+                                        if canManage, user.id != session.currentUser?.id {
+                                            Button(role: .destructive) {
+                                                remove(user)
+                                            } label: {
+                                                Label("Удалить из мероприятия", systemImage: "person.badge.minus")
                                             }
                                         }
                                     }
@@ -75,11 +81,18 @@ struct ChatMembersView: View {
         isLoading = false
     }
 
-    /// Назначить/снять админа чата (только глобальный админ).
-    private func setRole(_ user: User, admin: Bool) {
+    /// Роль в мероприятии. Меняет владелец, руководитель или реализатор своей
+    /// компании — админу чата этого мало, так решает сервер.
+    private func roleBinding(_ user: User) -> Binding<EventRole> {
+        Binding(get: { EventRole(user.eventRole) },
+                set: { setRole(user, role: $0) })
+    }
+
+    private func setRole(_ user: User, role: EventRole) {
+        guard EventRole(user.eventRole) != role else { return }
         Task {
             try? await session.directory.setMemberRole(dealId: dealId, workerId: user.id,
-                                                        role: admin ? "admin" : "member")
+                                                       role: role.rawValue)
             Haptics.success()
             await load()
         }
@@ -102,7 +115,14 @@ struct ChatMembersView: View {
                 OnlineDot(isOnline: online, size: 12).offset(x: 1, y: 1)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(user.fullName).font(Typography.callout.weight(.medium)).foregroundStyle(Theme.textPrimary)
+                HStack(spacing: 6) {
+                    Text(user.fullName).font(Typography.callout.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    // Плашку рисуем всем, кроме обычных участников: их
+                    // большинство, и подпись «участник» была бы только шумом.
+                    let role = EventRole(user.eventRole)
+                    if role.showsChip { RoleChip(role: role) }
+                }
                 Text(user.position.isEmpty
                      ? Presence.text(isOnline: online, lastSeen: realtime.lastSeen(for: user.id) ?? user.lastSeen)
                      : user.position)

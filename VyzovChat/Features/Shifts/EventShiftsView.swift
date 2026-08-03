@@ -10,6 +10,9 @@ struct EventShiftsView: View {
     let eventTitle: String
     /// Админ чата может открывать и закрывать смены за сотрудников.
     let isChatAdmin: Bool
+    /// Могу ли отметить свою смену. Наблюдатель и кладовщик не на площадке —
+    /// им сервер откажет, и предлагать кнопку незачем.
+    var canCheckin: Bool = true
 
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
@@ -42,7 +45,7 @@ struct EventShiftsView: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Spacing.m) {
-                            myShiftCard
+                            if canCheckin { myShiftCard }
                             if let errorText { ErrorBanner(text: errorText) }
                             shiftsList
                             if isChatAdmin { manualCard }

@@ -27,7 +27,7 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     /// Компания реализатора: он админ всех её мероприятий.
     var companyId: Int? = nil
     var lastSeen: Date? = nil   // «последний раз в сети»
-    /// Роль в конкретном мероприятии: member | admin | manager | warehouse
+    /// Роль в конкретном мероприятии: admin | senior | member | observer | storekeeper
     var eventRole: String? = nil
 
     /// Реализатор — полный доступ к Диску/Фотобанку и к чатам своей компании.

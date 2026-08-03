@@ -99,7 +99,8 @@ final class RealEventInfoService: EventInfoServicing {
 final class MockEventInfoService: EventInfoServicing {
     func equipment(dealId: String) async -> [EquipmentDTO] { [] }
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO {
-        EquipmentDTO(id: 0, name: name, qty: qty, crm_url: nil)
+        EquipmentDTO(id: 0, name: name, qty: qty, crm_url: nil,
+                     loaded_at: nil, loaded_by: nil, returned_at: nil, returned_by: nil)
     }
     func deleteEquipment(dealId: String, itemId: Int) async throws {}
     func documents(dealId: String) async -> [DocumentDTO] { [] }

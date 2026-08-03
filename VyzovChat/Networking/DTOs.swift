@@ -73,7 +73,7 @@ struct MemberDTO: Decodable, Identifiable {
     let id: Int
     let fio: String
     let login: String?
-    /// Роль в мероприятии: member | admin | manager | warehouse
+    /// Роль в мероприятии: admin | senior | member | observer | storekeeper
     let role: String
     let position: String?
 }
@@ -153,9 +153,61 @@ struct EventDetailsDTO: Decodable {
     let has_open_claim: Bool?
     let me_is_chat_admin: Bool?
     let me_can_invite: Bool?
+    /// Что мне можно в этом чате. Считает сервер, клиент только рисует по нему
+    /// кнопки — иначе права разъезжаются с серверными при каждой правке.
+    let me_rights: MeRightsDTO?
     /// Кого позвал этот куратор — по ним фильтруется список смен.
     let my_invited: [Int]?
 }
+
+/// Набор прав в чате мероприятия (`me_rights`).
+struct MeRightsDTO: Decodable {
+    /// admin | senior | member | observer | storekeeper; пусто — не в составе.
+    let role: String?
+    let chat_admin: Bool?
+    /// Документы (акты): загрузить, заменить, выгрузить.
+    let docs: Bool?
+    /// Претензии: зафиксировать, урегулировать, отправить.
+    let claims: Bool?
+    /// Отбор фото и выгрузка на Диск.
+    let otbor: Bool?
+    /// …включая назначения «Отчёт» и «Фотобанк» — они только у админа чата.
+    let otbor_all: Bool?
+    /// Какие этапы этот человек закрывает.
+    let stages: [String]?
+    /// Галочки в чеклисте оборудования.
+    let equip_check: Bool?
+    /// Добавить и удалить позицию оборудования.
+    let equip_edit: Bool?
+    /// Отметить свою смену: не для наблюдателя и кладовщика.
+    let checkin: Bool?
+    /// Раздавать роли в чате — владелец, руководитель, реализатор своей компании.
+    let assign: Bool?
+}
+
+// MARK: - Этапы мероприятия
+
+/// Пройденный этап: погрузка → приезд/монтаж → готовность → демонтаж → приёмка.
+struct StageDTO: Decodable {
+    let stage: String
+    let done_at: String
+    let done_by: String?
+}
+
+/// Сколько позиций оборудования отмечено на погрузке и на приёмке.
+struct EquipProgressDTO: Decodable {
+    let total: Int
+    let loaded: Int
+    let returned: Int
+}
+
+struct StagesDTO: Decodable {
+    let stages: [StageDTO]
+    let equipment: EquipProgressDTO?
+}
+
+struct SetStageRequest: Encodable { let done: Bool }
+struct EquipCheckRequest: Encodable { let kind: String; let on: Bool }
 
 struct CreateEventRequest: Encodable {
     let name: String
@@ -216,6 +268,33 @@ struct EquipmentDTO: Decodable, Identifiable {
     let name: String
     let qty: Int?
     let crm_url: String?
+    // Чеклист: отметки на погрузке и на приёмке — кто и когда.
+    let loaded_at: String?
+    let loaded_by: String?
+    let returned_at: String?
+    let returned_by: String?
+
+    /// Отмечена ли позиция в чеклисте нужного вида.
+    func isChecked(_ kind: EquipCheckKind) -> Bool {
+        kind == .loaded ? loaded_at != nil : returned_at != nil
+    }
+
+    /// Кто отметил — показываем рядом с галочкой.
+    func checkedBy(_ kind: EquipCheckKind) -> String? {
+        let who = kind == .loaded ? loaded_by : returned_by
+        return (who?.isEmpty == false) ? who : nil
+    }
+}
+
+/// Какой из двух чеклистов: погрузка в машину или приёмка обратно на склад.
+enum EquipCheckKind: String, Identifiable {
+    case loaded, returned
+
+    var id: String { rawValue }
+
+    var title: String { self == .loaded ? "Чеклист погрузки" : "Чеклист приёмки" }
+    var stage: String { self == .loaded ? "load" : "accept" }
+    var icon: String { self == .loaded ? "shippingbox" : "arrow.down.circle" }
 }
 
 struct AddEquipmentRequest: Encodable {

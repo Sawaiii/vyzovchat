@@ -24,7 +24,8 @@ protocol DirectoryServicing {
     func addMember(dealId: String, workerId: String, role: String) async throws
     /// Убрать участника (админ чата).
     func removeMember(dealId: String, workerId: String) async throws
-    /// Роль участника: member | admin | manager | warehouse (только глобальный админ).
+    /// Роль участника: admin | senior | member | observer | storekeeper.
+    /// Раздаёт владелец, руководитель или реализатор своей компании.
     func setMemberRole(dealId: String, workerId: String, role: String) async throws
 
     /// Словарь меток организации (создаёт и удаляет их админ).

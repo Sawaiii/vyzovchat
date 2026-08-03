@@ -47,6 +47,8 @@ final class RealtimeService: ObservableObject {
     let photobankChanged = PassthroughSubject<Void, Never>()
     /// Изменился список тем мероприятия.
     let topicsChanged = PassthroughSubject<Void, Never>()
+    /// Этапы мероприятия или чеклист оборудования изменились (eventId).
+    let stagesChanged = PassthroughSubject<String, Never>()
     /// Сменились закрепы чата. Сервер всегда шлёт весь список — так у всех
     /// одинаковая полоса, без досборки по кусочкам.
     let pinUpdates = PassthroughSubject<PinUpdate, Never>()
@@ -494,6 +496,9 @@ final class RealtimeService: ObservableObject {
                                       topicKey: topicKey,
                                       dmKey: root["dm_key"] as? String,
                                       pins: pins))
+
+        case "stages:changed":
+            stagesChanged.send(Self.idString(root["eventId"] ?? ""))
 
         case "topics:changed":
             topicsChanged.send(())

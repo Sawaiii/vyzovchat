@@ -20,11 +20,13 @@ struct TopicAccessView: View {
     @State private var saving = false
     @State private var errorText: String?
 
-    /// Роли в составе мероприятия — их же понимает сервер.
+    /// Роли в составе мероприятия — их же понимает сервер. Порядок от младшей
+    /// к старшей: так список читается как лестница доступа.
     private static let allRoles: [(String, String)] = [
-        ("member", "Сотрудники"),
-        ("manager", "Менеджеры"),
-        ("warehouse", "Склад"),
+        ("observer", "Наблюдатели"),
+        ("member", "Участники"),
+        ("storekeeper", "Кладовщики"),
+        ("senior", "Старшие"),
         ("admin", "Админы чата")
     ]
 

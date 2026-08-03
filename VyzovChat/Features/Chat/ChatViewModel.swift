@@ -43,6 +43,23 @@ final class ChatViewModel: ObservableObject {
     @Published var isChatAdmin = false
     /// Могу звать по ссылке — админ чата либо куратор.
     @Published var canInvite = false
+    /// Что мне можно в этом чате. Считает сервер, мы только рисуем по этому
+    /// набору кнопки: держать свою копию правил значит однажды разойтись с ним.
+    @Published var rights: MeRightsDTO?
+
+    var myEventRole: EventRole { EventRole(rights?.role) }
+    var canDocs: Bool { rights?.docs ?? isChatAdmin }
+    var canClaims: Bool { rights?.claims ?? isChatAdmin }
+    /// Отбор фото; «Отчёт» и «Фотобанк» отдельно — они только у админа чата.
+    var canPickPhotos: Bool { rights?.otbor ?? isChatAdmin }
+    var canPickForReport: Bool { rights?.otbor_all ?? isChatAdmin }
+    var canCheckin: Bool { rights?.checkin ?? true }
+    var canEditEquipment: Bool { rights?.equip_edit ?? isChatAdmin }
+    var canCheckEquipment: Bool { rights?.equip_check ?? isChatAdmin }
+    var canAssignRoles: Bool { rights?.assign ?? false }
+    /// Этапы, которые закрываю именно я: у админа все, у старшего середина,
+    /// у кладовщика погрузка и приёмка.
+    var myStages: Set<String> { Set(rights?.stages ?? []) }
     /// Кто докуда дочитал в мероприятии: workerId → id последнего прочитанного.
     @Published var groupReads: [String: Int] = [:]
     /// Всего участников мероприятия.
@@ -166,6 +183,16 @@ final class ChatViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] update in
                 Task { @MainActor in self?.applyPin(update) }
+            }
+            .store(in: &cancellables)
+
+        RealtimeService.shared.stagesChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] eventId in
+                Task { @MainActor in
+                    guard let self, eventId == self.chat.dealId else { return }
+                    await self.loadStages()
+                }
             }
             .store(in: &cancellables)
 
@@ -500,6 +527,71 @@ final class ChatViewModel: ObservableObject {
         topicUnread = await service.topicUnread(dealId: chat.dealId)
     }
 
+    // MARK: - Этапы мероприятия
+
+    /// Пройденные этапы: ключ этапа → кто и когда отметил.
+    @Published private(set) var stagesDone: [String: StageDTO] = [:]
+    /// Сколько позиций оборудования отмечено на погрузке и на приёмке.
+    @Published private(set) var equipProgress: EquipProgressDTO?
+    /// Отказ по этапу — показываем словами.
+    @Published var stageError: String?
+
+    /// Первый неотмеченный этап — единственный, который сейчас можно закрыть.
+    var nextStage: EventStage? { EventStage.allCases.first { stagesDone[$0.rawValue] == nil } }
+
+    /// Этап мой и следующий по очереди.
+    func canMark(_ stage: EventStage) -> Bool {
+        myStages.contains(stage.rawValue) && nextStage == stage
+    }
+
+    /// Снять можно только последний отмеченный: иначе в цепочке появляется
+    /// дыра вида «приёмка есть, погрузки нет».
+    func canUndo(_ stage: EventStage) -> Bool {
+        guard myStages.contains(stage.rawValue), stagesDone[stage.rawValue] != nil else { return false }
+        let all = EventStage.allCases
+        guard let next = nextStage else { return stage == all.last }
+        guard let idx = all.firstIndex(of: next), idx > 0 else { return false }
+        return all[idx - 1] == stage
+    }
+
+    /// Сколько позиций осталось отметить в чеклисте этапа.
+    func checklistLeft(_ stage: EventStage) -> Int? {
+        guard let kind = stage.checklist, let p = equipProgress, p.total > 0 else { return nil }
+        let done = kind == .loaded ? p.loaded : p.returned
+        return max(0, p.total - done)
+    }
+
+    func loadStages() async {
+        guard useRealtime, !chat.isDirect else { return }
+        guard let dto = await StagesService.stages(dealId: chat.dealId) else { return }
+        stagesDone = Dictionary(dto.stages.map { ($0.stage, $0) }, uniquingKeysWith: { a, _ in a })
+        equipProgress = dto.equipment
+    }
+
+    func toggleStage(_ stage: EventStage) async {
+        let undo = canUndo(stage) && stagesDone[stage.rawValue] != nil
+        guard undo || canMark(stage) else { return }
+        do {
+            try await StagesService.setStage(dealId: chat.dealId, stage: stage, done: !undo)
+            Haptics.success()
+        } catch StagesService.StageError.order {
+            stageError = nextStage.map { "Сначала пройдите этап «\($0.title)»" }
+                ?? "Этапы отмечаются по порядку"
+            Haptics.warning()
+        } catch StagesService.StageError.checklist {
+            // Числа берём свои: сервер в отказе их не повторяет, а человеку
+            // важно знать, сколько именно позиций осталось.
+            let left = checklistLeft(stage) ?? 0
+            let total = equipProgress?.total ?? 0
+            stageError = "Не отмечено оборудование: осталось \(left) из \(total). Откройте чеклист этапа."
+            Haptics.warning()
+        } catch {
+            stageError = "Не удалось отметить этап"
+            Haptics.warning()
+        }
+        await loadStages()
+    }
+
     // MARK: - Закреплённые сообщения
 
     /// Закрепы открытого чата. У мероприятия свои на каждой вкладке, у личной
@@ -673,7 +765,8 @@ final class ChatViewModel: ObservableObject {
     func loadEventMeta() async {
         guard useRealtime, !chat.isDirect else { return }
         if let dto = try? await APIClient.shared.get("/api/events/\(chat.dealId)", as: EventDetailsDTO.self) {
-            isChatAdmin = dto.me_is_chat_admin ?? false
+            rights = dto.me_rights
+            isChatAdmin = dto.me_rights?.chat_admin ?? dto.me_is_chat_admin ?? false
             memberCount = dto.members.count
             members = dto.members.map(User.init(member:))
             canInvite = dto.me_can_invite ?? false
@@ -861,6 +954,7 @@ final class ChatViewModel: ObservableObject {
             await self.loadPins()
             await self.markRead()
             await self.loadEventMeta()
+            await self.loadStages()
             if !self.chat.isDirect {
                 self.topicUnread = await self.service.topicUnread(dealId: self.chat.dealId)
                 // Ленты остальных тем тянем с задержкой: сразу они конкурировали
