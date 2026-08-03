@@ -52,6 +52,29 @@ final class APIClient {
     /// разные экраны читают разные части.
     @discardableResult
     func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+        let data = try await getData(path)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding
+        }
+    }
+
+    /// GET там, где сервер отвечает либо объектом, либо литералом `null`
+    /// (например, закреп вкладки). Пустой ответ разбираем сами: полагаться на
+    /// то, как декодер обойдётся с «голым» null, не хочется.
+    func getOptional<T: Decodable>(_ path: String, as type: T.Type) async throws -> T? {
+        let data = try await getData(path)
+        let body = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body != "null" else { return nil }
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding
+        }
+    }
+
+    private func getData(_ path: String) async throws -> Data {
         // Запрос собираем заранее: внутрь замыкания склейки уходят только
         // готовый запрос и сессия, без ссылки на клиент.
         var req = URLRequest(url: try makeURL(path))
@@ -61,7 +84,7 @@ final class APIClient {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let request = req
-        let data = try await inflight.run(key: path) { [session] in
+        return try await inflight.run(key: path) { [session] in
             let (data, response): (Data, URLResponse)
             do {
                 (data, response) = try await session.data(for: request)
@@ -70,11 +93,6 @@ final class APIClient {
             }
             try Self.validate(response, data: data)
             return data
-        }
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIError.decoding
         }
     }
 

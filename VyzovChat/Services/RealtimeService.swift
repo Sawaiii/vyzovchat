@@ -47,6 +47,9 @@ final class RealtimeService: ObservableObject {
     let photobankChanged = PassthroughSubject<Void, Never>()
     /// Изменился список тем мероприятия.
     let topicsChanged = PassthroughSubject<Void, Never>()
+    /// Сменился закреп вкладки: мероприятие, тема ("main" — «Общий») и само
+    /// сообщение (nil — закреп сняли).
+    let pinUpdates = PassthroughSubject<(eventId: String, topicKey: String, message: Message?), Never>()
     /// Меня упомянули через @ в мероприятии (eventId).
     let mentions = PassthroughSubject<String, Never>()
     /// Кто-то открыл или закрыл смену: (eventId, отметка).
@@ -466,6 +469,20 @@ final class RealtimeService: ObservableObject {
                   let data = try? JSONSerialization.data(withJSONObject: raw),
                   let dto = try? JSONDecoder().decode(CheckinDTO.self, from: data) else { return }
             checkins.send((eventId: Self.idString(root["eventId"] ?? ""), checkin: dto))
+
+        case "pin":
+            // topic_id приходит null для «Общего» — это не отсутствие поля,
+            // а именно вкладка «Общий», и путать их нельзя.
+            let topicKey: String = {
+                guard let raw = root["topic_id"], !(raw is NSNull) else { return "main" }
+                return Self.idString(raw)
+            }()
+            let message = (root["message"] as? [String: Any])
+                .flatMap { Self.decodeMessage($0) }
+                .map { Message(dto: $0) }
+            pinUpdates.send((eventId: Self.idString(root["event_id"] ?? ""),
+                             topicKey: topicKey,
+                             message: message))
 
         case "topics:changed":
             topicsChanged.send(())

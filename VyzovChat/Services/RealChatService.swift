@@ -106,6 +106,29 @@ final class RealChatService: ChatServicing {
         }
     }
 
+    // MARK: - Закреплённое сообщение
+
+    /// Закреп вкладки: свой у «Общего» и у каждой темы. Нет закрепа — сервер
+    /// отвечает `null`.
+    func pinnedMessage(dealId: String, topicId: Int?) async -> Message? {
+        let key = topicId.map(String.init) ?? "main"
+        guard let dto = try? await APIClient.shared.getOptional(
+            "/api/events/\(dealId)/pin?topic_id=\(key)", as: MessageDTO.self) else { return nil }
+        return Message(dto: dto)
+    }
+
+    /// Закрепляет только админ чата; в ЛС сервер закреп не хранит и ответит
+    /// отказом.
+    func pin(messageId: String) async throws -> Message {
+        let dto = try await APIClient.shared.post("/api/messages/\(messageId)/pin",
+                                                  json: nil, as: MessageDTO.self)
+        return Message(dto: dto)
+    }
+
+    func unpin(messageId: String) async throws {
+        _ = try await APIClient.shared.delete("/api/messages/\(messageId)/pin", as: OKDTO.self)
+    }
+
     // MARK: - Темы
 
     func fetchTopics(dealId: String) async -> [TopicDTO] {

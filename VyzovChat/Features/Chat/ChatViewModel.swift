@@ -150,7 +150,19 @@ final class ChatViewModel: ObservableObject {
         RealtimeService.shared.deletions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] id in
-                Task { @MainActor in self?.messages.removeAll { $0.id == id } }
+                Task { @MainActor in
+                    // Закреплённое удалили — полосу тоже убираем: сервер про
+                    // это отдельным кадром не сообщает.
+                    if self?.pinned?.id == id { self?.pinned = nil }
+                    self?.messages.removeAll { $0.id == id }
+                }
+            }
+            .store(in: &cancellables)
+
+        RealtimeService.shared.pinUpdates
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] update in
+                Task { @MainActor in self?.applyPin(update) }
             }
             .store(in: &cancellables)
 
@@ -327,6 +339,12 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func applyEdit(_ id: String, _ body: String, _ editedAt: Date?) {
+        // Правку видно и в полосе закрепа: там лежит копия сообщения, и без
+        // этого она показывала бы старый текст до перезахода в чат.
+        if pinned?.id == id {
+            pinned?.text = body
+            pinned?.editedAt = editedAt ?? Date()
+        }
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[idx].text = body
         messages[idx].editedAt = editedAt ?? Date()
@@ -443,6 +461,8 @@ final class ChatViewModel: ObservableObject {
         loadedTopicId = id
         selectedTopicId = id
         lastMarkedRead = 0
+        // Закреп у каждой вкладки свой — чужой не показываем ни секунды.
+        pinned = nil
         // Спиннер — только если про тему вообще ничего не знаем. Пустой КЭШ значит
         // «в теме нет сообщений», и показывать на секунду загрузку, чтобы затем
         // сказать «сообщений нет», — лишнее мельтешение.
@@ -473,7 +493,72 @@ final class ChatViewModel: ObservableObject {
         initialAnchorId = nil
 
         await markRead()
+        await loadPin()
         topicUnread = await service.topicUnread(dealId: chat.dealId)
+    }
+
+    // MARK: - Закреплённое сообщение
+
+    /// Закреп открытой вкладки. Свой у «Общего» и у каждой темы — при смене
+    /// темы его перезагружаем, а не тащим за собой.
+    @Published private(set) var pinned: Message?
+    /// Не смогли закрепить или открепить — показываем причину.
+    @Published var pinError: String?
+
+    /// Закреплять и откреплять может только админ чата — так решает сервер,
+    /// и повторяем это здесь, чтобы не предлагать заведомо отказное действие.
+    var canPin: Bool { !chat.isDirect && isChatAdmin }
+
+    func loadPin() async {
+        guard !chat.isDirect else { pinned = nil; return }
+        let id = loadedTopicId
+        let msg = await service.pinnedMessage(dealId: chat.dealId, topicId: id)
+        // Пока ходили за закрепом, тему могли пролистать дальше — чужой закреп
+        // на чужой вкладке показывать нельзя.
+        guard loadedTopicId == id else { return }
+        pinned = msg
+    }
+
+    func pin(_ message: Message) async {
+        do {
+            pinned = try await service.pin(messageId: message.id)
+            Haptics.success()
+        } catch {
+            pinError = "Не удалось закрепить сообщение"
+            Haptics.warning()
+        }
+    }
+
+    func unpin() async {
+        guard let current = pinned else { return }
+        pinned = nil                      // полоса уходит сразу
+        do {
+            try await service.unpin(messageId: current.id)
+        } catch {
+            pinned = current              // не вышло — возвращаем на место
+            pinError = "Не удалось открепить сообщение"
+            Haptics.warning()
+        }
+    }
+
+    /// К закреплённому: если оно уже в ленте — просто прокрутка, иначе грузим
+    /// окно вокруг него, как при переходе из поиска.
+    func goToPinned() async {
+        guard let pinned else { return }
+        if messages.contains(where: { $0.id == pinned.id }) {
+            jumpToMessageId = pinned.id
+        } else {
+            await openFound(pinned)
+        }
+    }
+
+    /// Закреп сменил кто-то другой. Берём только свою вкладку: сервер шлёт кадр
+    /// всему мероприятию, а закреп у «Общего» и у каждой темы свой.
+    private func applyPin(_ update: (eventId: String, topicKey: String, message: Message?)) {
+        guard !chat.isDirect,
+              update.eventId == chat.dealId,
+              update.topicKey == topicKey(loadedTopicId) else { return }
+        pinned = update.message
     }
 
     func reloadTopics() async {
@@ -711,6 +796,7 @@ final class ChatViewModel: ObservableObject {
         // Не задерживает показ чата.
         Task { [weak self] in
             guard let self else { return }
+            await self.loadPin()
             await self.markRead()
             await self.loadEventMeta()
             if !self.chat.isDirect {

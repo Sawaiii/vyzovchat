@@ -25,6 +25,13 @@ protocol ChatServicing {
     func fetchMessages(chatId: String, topicId: Int?, around messageId: Int) async -> [Message]?
     /// Последнее сообщение чата — для превью в списке (грузится фоном).
     func lastMessage(for chat: Chat) async -> Message?
+
+    // Закреплённое сообщение — своё у «Общего» и у каждой темы. Закрепляют
+    // только админы чата, и только в мероприятиях: в ЛС сервер закреп не хранит.
+    func pinnedMessage(dealId: String, topicId: Int?) async -> Message?
+    func pin(messageId: String) async throws -> Message
+    func unpin(messageId: String) async throws
+
     func send(text: String, chatId: String, senderId: String) async -> Message
     func sendPhotos(_ count: Int, chatId: String, senderId: String) async -> Message
 }
@@ -63,6 +70,12 @@ final class MockChatService: ChatServicing {
     func lastMessage(for chat: Chat) async -> Message? {
         MockData.messages(chatId: chat.id).last
     }
+
+    func pinnedMessage(dealId: String, topicId: Int?) async -> Message? { nil }
+    func pin(messageId: String) async throws -> Message {
+        throw APIError.transport("Закреп недоступен в демо-режиме")
+    }
+    func unpin(messageId: String) async throws {}
 
     func fetchTopics(dealId: String) async -> [TopicDTO] { [] }
     func createTopic(dealId: String, name: String) async throws -> TopicDTO {

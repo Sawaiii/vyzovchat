@@ -51,6 +51,11 @@ struct ChatView: View {
                 set: { if !$0 { model.uploadError = nil } })
     }
 
+    private var pinErrorBinding: Binding<Bool> {
+        Binding(get: { model.pinError != nil },
+                set: { if !$0 { model.pinError = nil } })
+    }
+
     /// Дата и время мероприятия в шапке чата.
     ///
     /// Пока начало ещё не наступило, время подписано как «приезд» и выделено:
@@ -125,6 +130,8 @@ struct ChatView: View {
                         onEditAccess: { topic in editingTopic = topic },
                         onDelete: { topic in Task { await model.deleteTopic(topic.id) } }
                     )
+
+                    pinBar
                 }
 
                 if model.chat.isDirect || model.topics.isEmpty {
@@ -199,6 +206,11 @@ struct ChatView: View {
             Button("Понятно", role: .cancel) { model.uploadError = nil }
         } message: {
             Text(model.uploadError ?? "")
+        }
+        .alert("Закреп", isPresented: pinErrorBinding) {
+            Button("Понятно", role: .cancel) { model.pinError = nil }
+        } message: {
+            Text(model.pinError ?? "")
         }
         .sheet(isPresented: $showEventInfo) {
             EventInfoView(dealId: model.chat.dealId,
@@ -761,6 +773,7 @@ struct ChatView: View {
         var n = 2   // Ответить, Переслать
         if model.isMine(msg) && msg.text?.isEmpty == false { n += 1 }   // Изменить
         if let text = msg.text, !text.isEmpty { n += 1 }                 // Копировать
+        if model.canPin { n += 1 }                                       // Закрепить
         if model.isMine(msg) || isAdmin { n += 1 }                       // Удалить
         return n
     }
@@ -809,6 +822,14 @@ struct ChatView: View {
             if let text = msg.text, !text.isEmpty {
                 menuDivider
                 actionRow("Копировать", "doc.on.doc") { UIPasteboard.general.string = text }
+            }
+            if model.canPin {
+                menuDivider
+                if model.pinned?.id == msg.id {
+                    actionRow("Открепить", "pin.slash") { Task { await model.unpin() } }
+                } else {
+                    actionRow("Закрепить", "pin") { Task { await model.pin(msg) } }
+                }
             }
             if model.isMine(msg) || isAdmin {
                 menuDivider
@@ -989,6 +1010,45 @@ struct ChatView: View {
         }
         .padding(.horizontal, Spacing.s).padding(.vertical, 6)
         .background(Theme.panel)
+    }
+
+    /// Полоса закреплённого сообщения — своя у «Общего» и у каждой темы.
+    /// Нажатие ведёт к самому сообщению, даже если оно давно уехало из ленты.
+    @ViewBuilder
+    private var pinBar: some View {
+        if let pinned = model.pinned {
+            HStack(spacing: Spacing.s) {
+                Rectangle().fill(Theme.accent).frame(width: 3, height: 30)
+                Button {
+                    Task { await model.goToPinned() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(pinned.senderName ?? "Закреплённое")
+                                .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                            Text(pinned.previewText)
+                                .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                // Открепить может только админ чата — у остальных сервер откажет.
+                if model.canPin {
+                    Button { Task { await model.unpin() } } label: {
+                        Image(systemName: "xmark").font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 32, height: 32).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Spacing.s).padding(.vertical, 5)
+            .background(Theme.panel.opacity(0.6))
+        }
     }
 
     private func replyBar(_ reply: Message) -> some View {
