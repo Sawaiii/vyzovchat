@@ -14,6 +14,21 @@ struct EventShiftsView: View {
     /// им сервер откажет, и предлагать кнопку незачем.
     var canCheckin: Bool = true
 
+    /// Что подтверждаем. Отметка пишет время и место и завершение отменить
+    /// нельзя, поэтому спрашиваем перед обоими действиями.
+    enum Confirm: String, Identifiable {
+        case start, finish
+        var id: String { rawValue }
+
+        var title: String { self == .start ? "Отметиться на месте?" : "Завершить смену?" }
+        var action: String { self == .start ? "Я на месте" : "Завершить" }
+        var message: String {
+            self == .start
+                ? "Запишем время и координаты — так подтверждается, что вы на площадке."
+                : "Отметим время окончания. Открыть эту смену заново будет нельзя."
+        }
+    }
+
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
     @Environment(\.adaptiveMetrics) private var metrics
@@ -24,6 +39,7 @@ struct EventShiftsView: View {
     @State private var busy = false
     @State private var busyWorkerId: String?
     @State private var errorText: String?
+    @State private var confirming: Confirm?
 
     private var myId: String { session.currentUser?.id ?? "" }
 
@@ -65,6 +81,14 @@ struct EventShiftsView: View {
                 guard info.eventId == dealId else { return }
                 apply(info.checkin)
             }
+            .alert(item: $confirming) { confirm in
+                Alert(title: Text(confirm.title),
+                      message: Text(confirm.message),
+                      primaryButton: .default(Text(confirm.action)) {
+                          Task { await mark(checkIn: confirm == .start) }
+                      },
+                      secondaryButton: .cancel(Text("Отмена")))
+            }
         }
     }
 
@@ -80,18 +104,20 @@ struct EventShiftsView: View {
                     Label("На смене с \(time(open.checked_at))", systemImage: "clock.badge.checkmark")
                         .font(Typography.callout).foregroundStyle(Theme.success)
                     PrimaryButton(title: "Завершить смену", isLoading: busy, isEnabled: !busy) {
-                        Task { await mark(checkIn: false) }
+                        confirming = .finish
                     }
                 } else if myClosedToday {
                     Label("Смена завершена", systemImage: "checkmark.seal")
                         .font(Typography.callout).foregroundStyle(Theme.textSecondary)
-                    SecondaryButton(title: "Открыть смену снова", icon: "play.circle") {
-                        Task { await mark(checkIn: true) }
-                    }
-                    .disabled(busy)
+                    // Кнопки «открыть снова» здесь нет намеренно: сервер при
+                    // повторной отметке НЕ снимает время завершения, а время
+                    // начала переписывает на текущее. Смена оставалась бы
+                    // закрытой, а отработанные часы обнулялись — см. пояснение.
+                    Text("Открыть эту смену заново нельзя: отметку о завершении снимает только админ чата. Отработанное время уже засчитано.")
+                        .font(.caption2).foregroundStyle(Theme.textSecondary)
                 } else {
                     PrimaryButton(title: "Я на месте", isLoading: busy, isEnabled: !busy) {
-                        Task { await mark(checkIn: true) }
+                        confirming = .start
                     }
                 }
 
