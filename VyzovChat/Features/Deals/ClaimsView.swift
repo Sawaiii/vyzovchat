@@ -27,6 +27,10 @@ struct ClaimsView: View {
     // Закрытие с комментарием
     @State private var closing: ClaimDTO?
     @State private var closeComment = ""
+    // Удаление — тоже с комментарием: претензия исчезает из списка, и без
+    // объяснения в чате от неё не остаётся вообще ничего.
+    @State private var deleting: ClaimDTO?
+    @State private var deleteComment = ""
 
     struct Row: Identifiable {
         let id = UUID()
@@ -72,6 +76,16 @@ struct ClaimsView: View {
             } message: {
                 Text("Комментарий уйдёт в подтему «Претензия», чтобы решение осталось в чате.")
             }
+            .alert("Удалить претензию", isPresented: Binding(
+                get: { deleting != nil }, set: { if !$0 { deleting = nil } })
+            ) {
+                TextField("Причина", text: $deleteComment)
+                Button("Удалить", role: .destructive) { Task { await remove() } }
+                    .disabled(deleteComment.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Отмена", role: .cancel) { deleting = nil; deleteComment = "" }
+            } message: {
+                Text("Причина уйдёт в подтему «Претензия». Без неё удалить нельзя: иначе от претензии не останется следа.")
+            }
         }
     }
 
@@ -93,7 +107,7 @@ struct ClaimsView: View {
                                 .background(claim.isOpen ? Theme.danger : Theme.panel2, in: Capsule())
                             Spacer()
                             if isChatAdmin {
-                                Button { Task { await remove(claim) } } label: {
+                                Button { deleting = claim; deleteComment = "" } label: {
                                     Image(systemName: "trash").foregroundStyle(Theme.danger)
                                 }
                             }
@@ -240,12 +254,25 @@ struct ClaimsView: View {
         }
     }
 
-    private func remove(_ claim: ClaimDTO) async {
+    /// Удаление с причиной. Причину пишем в подтему «Претензия» — как и при
+    /// урегулировании: сервер комментарий не принимает, а решение должно
+    /// остаться в чате, иначе претензия исчезает бесследно.
+    private func remove() async {
+        guard let claim = deleting else { return }
+        let comment = deleteComment.trimmingCharacters(in: .whitespaces)
+        guard !comment.isEmpty else { return }
+        deleting = nil
+        deleteComment = ""
         do {
             try await session.eventInfo.deleteClaim(id: claim.id)
+            RealtimeService.shared.sendText("Претензия удалена: " + comment,
+                                            eventId: dealId, topicId: claimTopicId)
             Haptics.success()
             await load()
-        } catch { errorText = error.localizedDescription }
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
     }
 
     private func load() async {
