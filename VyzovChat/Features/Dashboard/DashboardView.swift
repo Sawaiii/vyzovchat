@@ -187,34 +187,38 @@ struct DashboardView: View {
         let openClaims = (event.claims ?? []).filter(\.isOpen).count
         return GlassCard {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                HStack(alignment: .top, spacing: Spacing.xs) {
-                    Text(event.name).font(Typography.callout.weight(.medium))
-                        .foregroundStyle(Theme.textPrimary).lineLimit(3)
-                    Spacer(minLength: Spacing.xs)
-                    if let company, !company.isEmpty { CompanyBadge(name: company) }
-                    if event.viewed != true {
-                        Text("новое").font(.caption2.weight(.semibold))
-                            .foregroundStyle(Theme.textOnAccent)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.accent, in: Capsule())
+                // Заголовок и есть вход в мероприятие: карточку целиком ссылкой
+                // не сделать — внутри свои кнопки (фото, «в чат»), и они бы
+                // перестали нажиматься.
+                NavigationLink {
+                    ReportEventDetailView(event: event, company: company,
+                                          membersTotal: membersCount[event.id])
+                } label: {
+                    HStack(alignment: .top, spacing: Spacing.xs) {
+                        Text(event.name).font(Typography.callout.weight(.medium))
+                            .foregroundStyle(Theme.textPrimary).lineLimit(3)
+                        Spacer(minLength: Spacing.xs)
+                        if let company, !company.isEmpty { CompanyBadge(name: company) }
+                        if event.viewed != true {
+                            Text("новое").font(.caption2.weight(.semibold))
+                                .foregroundStyle(Theme.textOnAccent)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Theme.accent, in: Capsule())
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.top, 3)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 // Ответственные за мероприятие — их видно первыми: с них и спрос.
                 if let admins = event.admins, !admins.isEmpty {
                     FlowLayout(spacing: 4) {
                         Text("Главный:").font(.caption2).foregroundStyle(Theme.textSecondary)
-                        ForEach(admins) { admin in
-                            // Заливка и обводка акцентом: на общем сером фоне
-                            // карточки старший должен читаться сразу, а не
-                            // сливаться с остальными плашками.
-                            Label(admin.fio, systemImage: "person.fill")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Theme.accent)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(Theme.accent.opacity(0.16), in: Capsule())
-                                .overlay(Capsule().stroke(Theme.accent.opacity(0.45), lineWidth: 1))
-                        }
+                        ForEach(admins) { admin in LeaderChip(fio: admin.fio) }
                     }
                 }
 
