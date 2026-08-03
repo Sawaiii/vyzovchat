@@ -857,6 +857,16 @@ extension Chat {
 }
 
 extension Message {
+    /// Служебные отметки мероприятия. Сервер шлёт их обычным сообщением от лица
+    /// того, кто нажал, — но это не разговор, а событие, и в ленте оно должно
+    /// стоять строкой по центру, как «добавил участника», а не пузырём.
+    static let noteKinds: Set<String> = ["shift_in", "shift_out", "system"]
+
+    private static func kind(dto: MessageDTO, hasAttachments: Bool) -> Kind {
+        if noteKinds.contains(dto.kind) { return .system }
+        return hasAttachments ? .photo : .text
+    }
+
     /// Короткое превью для списка чатов.
     var previewText: String {
         if let t = text, !t.isEmpty { return t }
@@ -897,7 +907,7 @@ extension Message {
             text: dto.body,
             attachments: attachments,
             sentAt: DateParse.iso(dto.created_at) ?? Date(),
-            kind: attachments.isEmpty ? .text : .photo
+            kind: Self.kind(dto: dto, hasAttachments: !attachments.isEmpty)
         )
         self.reactions = (dto.reactions ?? []).map {
             Reaction(emoji: $0.emoji, workerId: String($0.worker_id))

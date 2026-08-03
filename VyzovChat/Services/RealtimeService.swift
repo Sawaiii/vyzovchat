@@ -544,6 +544,9 @@ final class RealtimeService: ObservableObject {
     private func notifyIfNeeded(_ msg: Message, mentioned: Bool) {
         guard msg.senderId != currentUserId else { return }   // не своё
         guard msg.chatId != activeChatId else { return }       // не открытый сейчас чат
+        // Отметки о смене и прочие служебные строки — фон мероприятия, а не
+        // разговор: сервер по ним пуш не шлёт, и локально дёргать не за чем.
+        guard !msg.isSystem else { return }
         // Упоминание пробивает «без звука»: его как раз и ждут адресно.
         // Проверяем сообщение, а не чат: тема могла быть заглушена отдельно от
         // мероприятия. Упоминание пробивает «без звука» — его как раз и ждут адресно.

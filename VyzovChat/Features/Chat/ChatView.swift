@@ -454,10 +454,11 @@ struct ChatView: View {
                 // Заглушки — по центру экрана: внутри прижатой к низу ленты
                 // они уезжали вниз.
                 .overlay {
-                    if loading {
-                        ProgressView().tint(Theme.accent)
-                    } else if items.isEmpty {
-                        emptyState
+                    // Колесо — только когда показывать нечего. Раньше оно
+                    // висело поверх уже загруженной ленты, пока догружалась
+                    // обвязка чата, и выглядело как «всё ещё грузится».
+                    if items.isEmpty {
+                        if loading { ProgressView().tint(Theme.accent) } else { emptyState }
                     }
                 }
                 .modifier(BottomTracking { if isActive { updateAtBottom($0) } })

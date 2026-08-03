@@ -522,9 +522,12 @@ final class ChatViewModel: ObservableObject {
         // Смена темы — её лента открывается в конце (см. settleAtBottom во вью).
         initialAnchorId = nil
 
-        await markRead()
-        await loadPins()
-        topicUnread = await service.topicUnread(dealId: chat.dealId)
+        // Отметка, закреп и счётчики независимы — разом, а не по очереди.
+        async let read: Void = markRead()
+        async let pins: Void = loadPins()
+        async let counts: [String: Int] = service.topicUnread(dealId: chat.dealId)
+        _ = await (read, pins)
+        topicUnread = await counts
     }
 
     // MARK: - Этапы мероприятия
@@ -778,7 +781,16 @@ final class ChatViewModel: ObservableObject {
     /// целиком: у «Общего» и у каждой подтемы свои курсоры.
     func loadEventMeta() async {
         guard useRealtime, !chat.isDirect else { return }
-        if let dto = try? await APIClient.shared.get("/api/events/\(chat.dealId)", as: EventDetailsDTO.self) {
+        // Карточка и состояние прочтения независимы — берём разом.
+        let key = feedChatKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? feedChatKey
+        async let detailsReq = APIClient.shared.get("/api/events/\(chat.dealId)",
+                                                    as: EventDetailsDTO.self)
+        async let stateReq = APIClient.shared.get(
+            "/api/events/\(chat.dealId)/read-state?chat_key=\(key)", as: ReadStateDTO.self)
+        let details = try? await detailsReq
+        let state = try? await stateReq
+
+        if let dto = details {
             rights = dto.me_rights
             isChatAdmin = dto.me_rights?.chat_admin ?? dto.me_is_chat_admin ?? false
             memberCount = dto.members.count
@@ -786,9 +798,7 @@ final class ChatViewModel: ObservableObject {
             canInvite = dto.me_can_invite ?? false
             rebuildMentionIndex()
         }
-        let key = feedChatKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? feedChatKey
-        if let state = try? await APIClient.shared.get("/api/events/\(chat.dealId)/read-state?chat_key=\(key)",
-                                                       as: ReadStateDTO.self) {
+        if let state {
             groupReads = state.readers
             memberCount = max(memberCount, state.total)
         }
@@ -962,24 +972,30 @@ final class ChatViewModel: ObservableObject {
         isLoading = false
         didInitialLoad = true
 
-        // Не задерживает показ чата.
+        // Не задерживает показ чата. Всё это независимо друг от друга, поэтому
+        // идёт разом: цепочкой из семи запросов чат «доезжал» секунды три —
+        // складывались не сами запросы (сервер отвечает за десятые доли), а
+        // ожидания одного за другим.
         Task { [weak self] in
             guard let self else { return }
-            await self.loadPins()
-            await self.markRead()
-            await self.loadEventMeta()
-            await self.loadStages()
-            if !self.chat.isDirect {
-                self.topicUnread = await self.service.topicUnread(dealId: self.chat.dealId)
-                // Ленты остальных тем тянем с задержкой: сразу они конкурировали
-                // с открытой лентой за связь, и чат открывался заметно дольше.
-                // К моменту, когда человек свайпнёт, они обычно уже готовы.
-                try? await Task.sleep(for: .milliseconds(600))
-                await self.prefetchTopics()
-            }
-            let people = await DirectoryCache.colleagues()
-            self.usersById = Dictionary(people.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            async let pins: Void = self.loadPins()
+            async let read: Void = self.markRead()
+            async let meta: Void = self.loadEventMeta()
+            async let stages: Void = self.loadStages()
+            async let people: [User] = DirectoryCache.colleagues()
+
+            _ = await (pins, read, meta, stages)
+            let colleagues = await people
+            self.usersById = Dictionary(colleagues.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             self.rebuildMentionIndex()
+
+            guard !self.chat.isDirect else { return }
+            self.topicUnread = await self.service.topicUnread(dealId: self.chat.dealId)
+            // Ленты остальных тем — последними и с паузой: сразу они
+            // конкурировали с открытой лентой за связь. К моменту, когда
+            // человек свайпнёт, они обычно уже готовы.
+            try? await Task.sleep(for: .milliseconds(400))
+            await self.prefetchTopics()
         }
     }
 
