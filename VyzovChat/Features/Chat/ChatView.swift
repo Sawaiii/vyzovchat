@@ -246,7 +246,8 @@ struct ChatView: View {
         .sheet(item: $checklistKind) { kind in
             EquipChecklistView(dealId: model.chat.dealId,
                                kind: kind,
-                               canCheck: model.canCheckEquipment) {
+                               canCheck: model.canCheckEquipment,
+                               canEdit: model.canEditEquipment) {
                 Task { await model.loadStages() }
             }
         }

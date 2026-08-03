@@ -68,6 +68,26 @@ struct StagesTrack: View {
         }
         .buttonStyle(.plain)
         .disabled(!tappable)
+        // Долгое нажатие — явные действия. Одним тапом два смысла (открыть
+        // чеклист и снять отметку) не разложить, а отмена нужна наверняка:
+        // случайно закрытый этап иначе не отменить вовсе.
+        .contextMenu {
+            if model.canUndo(stage) {
+                Button { Task { await model.toggleStage(stage) } } label: {
+                    Label("Снять отметку", systemImage: "arrow.uturn.backward")
+                }
+            }
+            if model.canMark(stage) {
+                Button { Task { await model.toggleStage(stage) } } label: {
+                    Label("Отметить пройденным", systemImage: "checkmark.circle")
+                }
+            }
+            if let kind = stage.checklist {
+                Button { onOpenChecklist(kind) } label: {
+                    Label(kind.title, systemImage: kind.icon)
+                }
+            }
+        }
     }
 
     private func mark(done: Bool, isNext: Bool, number: Int) -> some View {

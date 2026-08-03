@@ -10,6 +10,8 @@ struct EquipChecklistView: View {
     let kind: EquipCheckKind
     /// Можно ли ставить галочки.
     let canCheck: Bool
+    /// Можно ли заводить и убирать позиции — это право админа чата.
+    var canEdit: Bool = false
     /// Отметили позицию — чтобы чат перечитал счётчики этапов.
     let onChanged: () -> Void
 
@@ -18,6 +20,10 @@ struct EquipChecklistView: View {
     @State private var isLoading = true
     @State private var busyId: Int?
     @State private var errorText: String?
+    // Добавление позиции руками: в CRM попадает не всё, а грузить надо всё.
+    @State private var newName = ""
+    @State private var newQty = ""
+    @State private var adding = false
 
     private var checked: Int { items.filter { $0.isChecked(kind) }.count }
 
@@ -48,19 +54,77 @@ struct EquipChecklistView: View {
     private var content: some View {
         if isLoading {
             ProgressView().tint(Theme.accent)
-        } else if items.isEmpty {
-            EmptyState(icon: "shippingbox",
-                       title: "Оборудования нет",
-                       message: "К мероприятию не привязано ни одной позиции — отмечать нечего.")
         } else {
             ScrollView {
                 VStack(spacing: Spacing.xs) {
-                    header
-                    ForEach(items) { item in row(item) }
+                    if items.isEmpty {
+                        EmptyState(icon: "shippingbox",
+                                   title: "Оборудования нет",
+                                   message: canEdit
+                                        ? "К мероприятию не привязано ни одной позиции. Добавьте их ниже."
+                                        : "К мероприятию не привязано ни одной позиции — отмечать нечего.")
+                    } else {
+                        header
+                        ForEach(items) { item in row(item) }
+                    }
+                    if canEdit { addRow }
                 }
                 .padding(.horizontal, Spacing.m)
                 .padding(.vertical, Spacing.s)
             }
+        }
+    }
+
+    /// Своя позиция: из CRM приезжает не всё, а в машину грузится всё.
+    private var addRow: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("ДОБАВИТЬ ПОЗИЦИЮ")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            HStack(spacing: Spacing.xs) {
+                TextField("Название", text: $newName)
+                    .padding(.horizontal, Spacing.s).padding(.vertical, 8)
+                    .background(Theme.panel2, in: Capsule())
+                TextField("шт.", text: $newQty)
+                    .keyboardType(.numberPad)
+                    .frame(width: 56)
+                    .padding(.horizontal, Spacing.s).padding(.vertical, 8)
+                    .background(Theme.panel2, in: Capsule())
+                Button { Task { await add() } } label: {
+                    if adding {
+                        ProgressView().tint(Theme.accent).frame(width: 36, height: 36)
+                    } else {
+                        Image(systemName: "plus.circle.fill").font(.title3)
+                            .foregroundStyle(canAdd ? Theme.accent : Theme.textSecondary)
+                            .frame(width: 36, height: 36)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAdd || adding)
+            }
+        }
+        .padding(.top, Spacing.s)
+    }
+
+    private var canAdd: Bool { !newName.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func add() async {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        adding = true
+        defer { adding = false }
+        do {
+            _ = try await Backend.eventInfo().addEquipment(dealId: dealId, name: name,
+                                                           qty: Int(newQty))
+            newName = ""
+            newQty = ""
+            Haptics.success()
+            await load()
+            // Счётчики этапов считают позиции — новая меняет «6/6» на «6/7».
+            onChanged()
+        } catch {
+            errorText = "Не удалось добавить позицию. Заводить оборудование может админ чата."
+            Haptics.warning()
         }
     }
 

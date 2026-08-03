@@ -132,32 +132,31 @@ struct ClaimsView: View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             Text("Новая претензия").font(Typography.headline).foregroundStyle(Theme.textPrimary)
 
-            if equipment.isEmpty {
-                Text("К мероприятию не прикреплено оборудование — сначала добавьте позиции в разделе «О мероприятии».")
-                    .font(.caption2).foregroundStyle(Theme.warning)
-            }
-
             ForEach($rows) { $row in
                 GlassCard {
                     VStack(alignment: .leading, spacing: Spacing.s) {
-                        // Позиция — только из оборудования мероприятия.
-                        Menu {
-                            ForEach(equipment) { item in
-                                Button(item.name) { row.position = item.name }
+                        // Позицию пишем руками, а список оборудования — быстрый
+                        // выбор рядом. Раньше выбрать можно было только из него,
+                        // и претензию было не завести вовсе, пока оборудование не
+                        // заведено, — хотя побиться может что угодно.
+                        HStack(spacing: Spacing.xs) {
+                            TextField("Что повреждено или утеряно", text: $row.position)
+                                .padding(.horizontal, Spacing.s).padding(.vertical, 10)
+                                .background(Theme.panel2, in: RoundedRectangle(cornerRadius: Theme.cornerSmall))
+
+                            if !equipment.isEmpty {
+                                Menu {
+                                    ForEach(equipment) { item in
+                                        Button(item.name) { row.position = item.name }
+                                    }
+                                } label: {
+                                    Image(systemName: "list.bullet")
+                                        .font(.callout).foregroundStyle(Theme.accent)
+                                        .frame(width: 40, height: 40)
+                                        .background(Theme.panel2, in: RoundedRectangle(cornerRadius: Theme.cornerSmall))
+                                }
                             }
-                        } label: {
-                            HStack {
-                                Text(row.position.isEmpty ? "Позиция из оборудования…" : row.position)
-                                    .foregroundStyle(row.position.isEmpty ? Theme.textSecondary : Theme.textPrimary)
-                                    .lineLimit(1)
-                                Spacer()
-                                Image(systemName: "chevron.down").font(.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            .padding(.horizontal, Spacing.s).padding(.vertical, 10)
-                            .background(Theme.panel2, in: RoundedRectangle(cornerRadius: Theme.cornerSmall))
                         }
-                        .disabled(equipment.isEmpty)
 
                         HStack(spacing: Spacing.xs) {
                             TextField("шт", text: $row.qty)
