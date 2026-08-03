@@ -68,7 +68,8 @@ struct TopicBar: View {
                     }
                 }
             }
-            .padding(.horizontal, Spacing.s)
+            // Та же линия, что у бейджей, даты и этапов выше.
+            .padding(.horizontal, Spacing.m)
             .padding(.vertical, 6)
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)

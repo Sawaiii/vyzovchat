@@ -18,7 +18,9 @@ struct StagesTrack: View {
                     step(stage, number: index + 1)
                 }
             }
-            .padding(.horizontal, Spacing.s)
+            // У шага свой отступ в 8 — чтобы кружок первого этапа встал на ту же
+            // линию, что бейджи и дата выше, снаружи остаётся ровно остаток.
+            .padding(.horizontal, Spacing.m - 8)
             .padding(.vertical, 6)
         }
         .background(Theme.panel.opacity(0.6))
