@@ -47,9 +47,9 @@ final class RealtimeService: ObservableObject {
     let photobankChanged = PassthroughSubject<Void, Never>()
     /// Изменился список тем мероприятия.
     let topicsChanged = PassthroughSubject<Void, Never>()
-    /// Сменился закреп вкладки: мероприятие, тема ("main" — «Общий») и само
-    /// сообщение (nil — закреп сняли).
-    let pinUpdates = PassthroughSubject<(eventId: String, topicKey: String, message: Message?), Never>()
+    /// Сменились закрепы чата. Сервер всегда шлёт весь список — так у всех
+    /// одинаковая полоса, без досборки по кусочкам.
+    let pinUpdates = PassthroughSubject<PinUpdate, Never>()
     /// Меня упомянули через @ в мероприятии (eventId).
     let mentions = PassthroughSubject<String, Never>()
     /// Кто-то открыл или закрыл смену: (eventId, отметка).
@@ -64,6 +64,15 @@ final class RealtimeService: ObservableObject {
         var downloadURL: URL?
         var thumbURL: URL?
         var mediaSize: Int?
+    }
+
+    /// Новый список закрепов чата. Заполнено либо мероприятие с темой, либо
+    /// ключ личной переписки — по нему получатель и понимает, его ли это чат.
+    struct PinUpdate {
+        let eventId: String?
+        let topicKey: String
+        let dmKey: String?
+        let pins: [Message]
     }
 
     /// Кто вошёл — чтобы отличать свои сообщения и «ответы вам».
@@ -477,12 +486,14 @@ final class RealtimeService: ObservableObject {
                 guard let raw = root["topic_id"], !(raw is NSNull) else { return "main" }
                 return Self.idString(raw)
             }()
-            let message = (root["message"] as? [String: Any])
-                .flatMap { Self.decodeMessage($0) }
+            let pins = ((root["pins"] as? [[String: Any]]) ?? [])
+                .compactMap { Self.decodeMessage($0) }
                 .map { Message(dto: $0) }
-            pinUpdates.send((eventId: Self.idString(root["event_id"] ?? ""),
-                             topicKey: topicKey,
-                             message: message))
+            let eventId = (root["event_id"]).flatMap { $0 is NSNull ? nil : Self.idString($0) }
+            pinUpdates.send(PinUpdate(eventId: eventId,
+                                      topicKey: topicKey,
+                                      dmKey: root["dm_key"] as? String,
+                                      pins: pins))
 
         case "topics:changed":
             topicsChanged.send(())

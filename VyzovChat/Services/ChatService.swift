@@ -26,11 +26,13 @@ protocol ChatServicing {
     /// Последнее сообщение чата — для превью в списке (грузится фоном).
     func lastMessage(for chat: Chat) async -> Message?
 
-    // Закреплённое сообщение — своё у «Общего» и у каждой темы. Закрепляют
-    // только админы чата, и только в мероприятиях: в ЛС сервер закреп не хранит.
-    func pinnedMessage(dealId: String, topicId: Int?) async -> Message?
-    func pin(messageId: String) async throws -> Message
-    func unpin(messageId: String) async throws
+    // Закреплённые сообщения. Их может быть несколько; у мероприятия свои на
+    // каждой вкладке, у личной переписки — свои. Закрепляет админ чата, а в ЛС —
+    // любой из двоих. Все три ручки отдают ВЕСЬ список закрепов чата.
+    func pinnedMessages(dealId: String, topicId: Int?) async -> [Message]
+    func pinnedDMMessages(peerId: String) async -> [Message]
+    func pin(messageId: String) async throws -> [Message]
+    func unpin(messageId: String) async throws -> [Message]
 
     func send(text: String, chatId: String, senderId: String) async -> Message
     func sendPhotos(_ count: Int, chatId: String, senderId: String) async -> Message
@@ -71,11 +73,12 @@ final class MockChatService: ChatServicing {
         MockData.messages(chatId: chat.id).last
     }
 
-    func pinnedMessage(dealId: String, topicId: Int?) async -> Message? { nil }
-    func pin(messageId: String) async throws -> Message {
+    func pinnedMessages(dealId: String, topicId: Int?) async -> [Message] { [] }
+    func pinnedDMMessages(peerId: String) async -> [Message] { [] }
+    func pin(messageId: String) async throws -> [Message] {
         throw APIError.transport("Закреп недоступен в демо-режиме")
     }
-    func unpin(messageId: String) async throws {}
+    func unpin(messageId: String) async throws -> [Message] { [] }
 
     func fetchTopics(dealId: String) async -> [TopicDTO] { [] }
     func createTopic(dealId: String, name: String) async throws -> TopicDTO {

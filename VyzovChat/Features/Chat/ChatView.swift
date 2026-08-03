@@ -130,9 +130,11 @@ struct ChatView: View {
                         onEditAccess: { topic in editingTopic = topic },
                         onDelete: { topic in Task { await model.deleteTopic(topic.id) } }
                     )
-
-                    pinBar
                 }
+
+                // Закрепы есть и в личной переписке, поэтому полоса живёт
+                // снаружи блока мероприятия.
+                pinBar
 
                 if model.chat.isDirect || model.topics.isEmpty {
                     messagesScroll
@@ -825,8 +827,8 @@ struct ChatView: View {
             }
             if model.canPin {
                 menuDivider
-                if model.pinned?.id == msg.id {
-                    actionRow("Открепить", "pin.slash") { Task { await model.unpin() } }
+                if model.pins.contains(where: { $0.id == msg.id }) {
+                    actionRow("Открепить", "pin.slash") { Task { await model.unpin(msg) } }
                 } else {
                     actionRow("Закрепить", "pin") { Task { await model.pin(msg) } }
                 }
@@ -1012,8 +1014,9 @@ struct ChatView: View {
         .background(Theme.panel)
     }
 
-    /// Полоса закреплённого сообщения — своя у «Общего» и у каждой темы.
-    /// Нажатие ведёт к самому сообщению, даже если оно давно уехало из ленты.
+    /// Полоса закреплённых сообщений — своя у «Общего», у каждой темы и у
+    /// личной переписки. Нажатие ведёт к сообщению (даже если оно давно уехало
+    /// из ленты) и переходит к следующему закрепу.
     @ViewBuilder
     private var pinBar: some View {
         if let pinned = model.pinned {
@@ -1031,12 +1034,18 @@ struct ChatView: View {
                                 .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
+                        // Счётчик только когда листать есть что.
+                        if model.pins.count > 1 {
+                            Text("\(model.pinIndex + 1)/\(model.pins.count)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Theme.textSecondary)
+                        }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
-                // Открепить может только админ чата — у остальных сервер откажет.
+                // В мероприятии открепляет админ чата, в личной переписке — оба.
                 if model.canPin {
                     Button { Task { await model.unpin() } } label: {
                         Image(systemName: "xmark").font(.caption.weight(.semibold))

@@ -106,27 +106,35 @@ final class RealChatService: ChatServicing {
         }
     }
 
-    // MARK: - Закреплённое сообщение
+    // MARK: - Закреплённые сообщения
 
-    /// Закреп вкладки: свой у «Общего» и у каждой темы. Нет закрепа — сервер
-    /// отвечает `null`.
-    func pinnedMessage(dealId: String, topicId: Int?) async -> Message? {
+    /// Закрепы вкладки мероприятия: свои у «Общего» и у каждой темы.
+    func pinnedMessages(dealId: String, topicId: Int?) async -> [Message] {
         let key = topicId.map(String.init) ?? "main"
-        guard let dto = try? await APIClient.shared.getOptional(
-            "/api/events/\(dealId)/pin?topic_id=\(key)", as: MessageDTO.self) else { return nil }
-        return Message(dto: dto)
+        let dtos = try? await APIClient.shared.getOptional(
+            "/api/events/\(dealId)/pin?topic_id=\(key)", as: [MessageDTO].self)
+        return (dtos ?? []).map { Message(dto: $0) }
     }
 
-    /// Закрепляет только админ чата; в ЛС сервер закреп не хранит и ответит
-    /// отказом.
-    func pin(messageId: String) async throws -> Message {
-        let dto = try await APIClient.shared.post("/api/messages/\(messageId)/pin",
-                                                  json: nil, as: MessageDTO.self)
-        return Message(dto: dto)
+    /// Закрепы личной переписки. Ключ переписки сервер собирает сам — от нас
+    /// нужен только собеседник.
+    func pinnedDMMessages(peerId: String) async -> [Message] {
+        let dtos = try? await APIClient.shared.getOptional("/api/dm/\(peerId)/pin", as: [MessageDTO].self)
+        return (dtos ?? []).map { Message(dto: $0) }
     }
 
-    func unpin(messageId: String) async throws {
-        _ = try await APIClient.shared.delete("/api/messages/\(messageId)/pin", as: OKDTO.self)
+    /// В мероприятии закрепляет админ чата, в личной переписке — любой из двоих.
+    /// В ответ приходит весь список закрепов чата, а не одно сообщение.
+    func pin(messageId: String) async throws -> [Message] {
+        let dtos = try await APIClient.shared.post("/api/messages/\(messageId)/pin",
+                                                   json: nil, as: [MessageDTO].self)
+        return dtos.map { Message(dto: $0) }
+    }
+
+    func unpin(messageId: String) async throws -> [Message] {
+        let dtos = try await APIClient.shared.delete("/api/messages/\(messageId)/pin",
+                                                     as: [MessageDTO].self)
+        return dtos.map { Message(dto: $0) }
     }
 
     // MARK: - Темы
