@@ -37,6 +37,10 @@ struct ChatView: View {
     @State private var isPressingMic = false
     /// Открытый чеклист оборудования: погрузка или приёмка.
     @State private var checklistKind: EquipCheckKind?
+    /// Темы, чью ленту уже довели до конца при первом показе. Повторно не
+    /// доводим: человек мог уйти вверх по переписке, и возврат в тему не
+    /// должен утаскивать его в конец.
+    @State private var settledTopics: Set<String> = []
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -480,8 +484,17 @@ struct ChatView: View {
                         withAnimation(.smooth) { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
-                // Стали активной темой — её лента открывается с конца.
-                .onChange(of: isActive) { if isActive { settleAtBottom(proxy) } }
+                // Стали активной темой — её лента открывается с конца, но ровно
+                // один раз. Раньше доводчик срабатывал на каждый возврат в тему
+                // и швырял ленту в конец, даже если человек читал середину, —
+                // это и был резкий баунс при свайпе туда-обратно.
+                .onChange(of: isActive) {
+                    guard isActive else { return }
+                    let key = topicId.map(String.init) ?? "main"
+                    guard !settledTopics.contains(key) else { return }
+                    settledTopics.insert(key)
+                    settleAtBottom(proxy)
+                }
                 // Переход из поиска: окно ленты уже загружено, осталось встать
                 // на найденном сообщении и подсветить его.
                 .onChange(of: model.jumpToMessageId) {

@@ -75,7 +75,7 @@ final class ChatViewModel: ObservableObject {
     @Published var selectedTopicId: Int?
     /// Тема, чья лента реально лежит в `messages` (см. selectTopic).
     @Published private(set) var loadedTopicId: Int?
-    /// Непрочитанное по темам: "m" — «Общий», иначе id темы.
+    /// Непрочитанное по темам: "main" — «Общий», иначе id темы.
     @Published var topicUnread: [String: Int] = [:]
     /// Кэш лент по темам (для листания без пустых экранов).
     private var messagesByTopic: [String: [Message]] = [:]
@@ -277,7 +277,7 @@ final class ChatViewModel: ObservableObject {
         scheduleReadSync()
         if !chat.isDirect {
             await loadEventMeta()
-            topicUnread = await service.topicUnread(dealId: chat.dealId)
+            await refreshTopicUnread()
         }
     }
 
@@ -422,7 +422,7 @@ final class ChatViewModel: ObservableObject {
                 feed.append(message)
                 messagesByTopic[key] = feed
             }
-            Task { topicUnread = await service.topicUnread(dealId: chat.dealId) }
+            Task { await refreshTopicUnread() }
             return
         }
 
@@ -441,6 +441,18 @@ final class ChatViewModel: ObservableObject {
 
     /// Слот темы в ответах сервера: «Общий» проходит как "main".
     private func topicKey(_ id: Int?) -> String { id.map(String.init) ?? "main" }
+
+    /// Забрать счётчики тем и обнулить открытую.
+    ///
+    /// Обнуляем сами, не полагаясь на ответ: наша отметка о прочтении и этот
+    /// запрос идут навстречу друг другу, и ответ, посчитанный до неё, возвращал
+    /// бейдж на тему, в которой человек сидит прямо сейчас. Ровно так он и
+    /// повисал на «Общем» при полностью прочитанном чате.
+    private func refreshTopicUnread() async {
+        var counts = await service.topicUnread(dealId: chat.dealId)
+        counts[topicKey(loadedTopicId)] = 0
+        topicUnread = counts
+    }
 
     /// Кэш лент по темам — чтобы при перелистывании страница была не пустой.
     func cachedMessages(for id: Int?) -> [Message] {
@@ -527,9 +539,10 @@ final class ChatViewModel: ObservableObject {
         // Отметка, закреп и счётчики независимы — разом, а не по очереди.
         async let read: Void = markRead()
         async let pins: Void = loadPins()
-        async let counts: [String: Int] = service.topicUnread(dealId: chat.dealId)
         _ = await (read, pins)
-        topicUnread = await counts
+        // Счётчики — после отметки о прочтении, иначе ответ, посчитанный до неё,
+        // вернул бы бейдж на только что открытую тему.
+        await refreshTopicUnread()
     }
 
     // MARK: - Этапы мероприятия
@@ -763,7 +776,7 @@ final class ChatViewModel: ObservableObject {
     func reloadTopics() async {
         guard !chat.isDirect else { return }
         topics = await service.fetchTopics(dealId: chat.dealId)
-        topicUnread = await service.topicUnread(dealId: chat.dealId)
+        await refreshTopicUnread()
         // Тему могли удалить, пока мы в ней — уходим в «Общий».
         if let selected = selectedTopicId, !topics.contains(where: { $0.id == selected }) {
             await selectTopic(nil)
@@ -931,9 +944,12 @@ final class ChatViewModel: ObservableObject {
 
     /// Ключ открытой сейчас ленты: у «Общего» и у каждой подтемы свой курсор
     /// прочтения — по нему считаются бейджи на чипах тем.
+    /// Считаем по ЗАГРУЖЕННОЙ теме, а не по выбранной: капсула тем уезжает
+    /// за пальцем раньше, чем доезжает лента, и отметка о прочтении легла бы
+    /// под ключ соседней темы — курсор чужой ленты в чужой теме.
     private var feedChatKey: String {
         guard !chat.isDirect else { return chatKey }
-        if let topic = selectedTopicId { return "t\(topic)" }
+        if let topic = loadedTopicId { return "t\(topic)" }
         return "e\(chat.dealId):main"
     }
 
@@ -959,7 +975,7 @@ final class ChatViewModel: ObservableObject {
             _ = try? await APIClient.shared.post("/api/reads",
                                                  json: ReadRequest(chatKey: feedChatKey, lastRead: lastRead),
                                                  as: OKDTO.self)
-            topicUnread[topicKey(selectedTopicId)] = 0
+            topicUnread[topicKey(loadedTopicId)] = 0
         }
     }
 
@@ -1019,7 +1035,7 @@ final class ChatViewModel: ObservableObject {
             self.rebuildMentionIndex()
 
             guard !self.chat.isDirect else { return }
-            self.topicUnread = await self.service.topicUnread(dealId: self.chat.dealId)
+            await self.refreshTopicUnread()
             // Ленты остальных тем — последними и с паузой: сразу они
             // конкурировали с открытой лентой за связь. К моменту, когда
             // человек свайпнёт, они обычно уже готовы.

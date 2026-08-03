@@ -37,9 +37,13 @@ struct StagesTrack: View {
         let tappable = model.canMark(stage) || model.canUndo(stage) || stage.checklist != nil
 
         return Button {
-            // У погрузки и приёмки нажатие ведёт в чеклист: закрыть этап всё
-            // равно нельзя, пока в нём есть неотмеченные позиции.
-            if let kind = stage.checklist, !model.canMark(stage) || (model.checklistLeft(stage) ?? 0) > 0 {
+            // Снять отметку — первым делом: у погрузки и приёмки нажатие вело
+            // в чеклист всегда, и отменить случайно закрытый этап было нечем.
+            if model.canUndo(stage) {
+                Task { await model.toggleStage(stage) }
+            } else if let kind = stage.checklist {
+                // Закрыть этап всё равно нельзя, пока в чеклисте есть
+                // неотмеченные позиции, — ведём туда, а не в отказ.
                 onOpenChecklist(kind)
             } else {
                 Task { await model.toggleStage(stage) }
