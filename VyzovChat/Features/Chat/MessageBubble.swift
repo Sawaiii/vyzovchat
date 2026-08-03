@@ -19,6 +19,9 @@ struct MessageBubble: View {
     var readAt: Date? = nil
     var groupRead: GroupReadInfo? = nil
     var highlighted: Bool = false
+    /// ФИО в нижнем регистре → id сотрудника: по ним в тексте находим
+    /// упоминания и делаем их кликабельными.
+    var mentionPeople: [String: String] = [:]
     var onLongPress: () -> Void = {}
     var onReply: () -> Void = {}
     var onReact: (String) -> Void = { _ in }
@@ -64,10 +67,17 @@ struct MessageBubble: View {
         }
     }
 
+    /// Есть ли что показать в цитате. Сообщение, на которое отвечали, могли
+    /// удалить — тогда `reply_to` у сервера остаётся, а превью пропадает, и
+    /// рисовать пустую сноску «Ответ» с пустой строкой незачем.
+    private var hasReplyQuote: Bool {
+        message.replyToId != nil && (message.replySender != nil || message.replyPreview != nil)
+    }
+
     /// Сообщение только с фото/видео (без текста/цитаты/пересылки) — рисуем без цветного фона.
     private var isMediaOnly: Bool {
         (message.text?.isEmpty ?? true) && !message.attachments.isEmpty
-            && message.replyToId == nil && message.forwardedFrom == nil
+            && !hasReplyQuote && message.forwardedFrom == nil
             && message.attachments.allSatisfy { $0.isImage || $0.isVideo }
     }
 
@@ -220,14 +230,22 @@ struct MessageBubble: View {
                     .foregroundStyle(Theme.accentSecondary)
             }
 
-            if message.replyToId != nil { replyQuote }
+            if hasReplyQuote { replyQuote }
 
             ForEach(message.attachments) { att in attachmentView(att) }
 
             if let text = message.text, !text.isEmpty {
                 // Текст и время в одной строке снизу — пузырь обнимает контент, без пустот.
                 HStack(alignment: .bottom, spacing: 6) {
-                    Text(text).font(Typography.body).foregroundStyle(Theme.textPrimary)
+                    Text(MentionText.build(text, people: mentionPeople, color: Theme.accentSecondary))
+                        .font(Typography.body).foregroundStyle(Theme.textPrimary)
+                        // Ссылка у упоминания своя, ненастоящая — перехватываем
+                        // её здесь и открываем профиль.
+                        .environment(\.openURL, OpenURLAction { url in
+                            guard let id = MentionText.workerId(from: url) else { return .systemAction }
+                            onOpenProfile(id)
+                            return .handled
+                        })
                     metaRow
                 }
             } else {

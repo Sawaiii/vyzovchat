@@ -155,6 +155,9 @@ final class ChatViewModel: ObservableObject {
                     // это отдельным кадром не сообщает.
                     self?.dropPin(id)
                     self?.messages.removeAll { $0.id == id }
+                    // Ответы на удалённое остаются с пустой цитатой до
+                    // перезахода — гасим её сразу.
+                    self?.dropReplyQuotes(to: id)
                 }
             }
             .store(in: &cancellables)
@@ -523,6 +526,19 @@ final class ChatViewModel: ObservableObject {
         pinIndex = max(0, list.count - 1)   // по умолчанию показываем самый свежий
     }
 
+    /// Сообщение удалили — цитаты на него больше ни на что не ведут.
+    private func dropReplyQuotes(to id: String) {
+        guard messages.contains(where: { $0.replyToId == id }) else { return }
+        // Правим копию и присваиваем разом: у `messages` в didSet пересборка
+        // ленты, и поэлементная правка пересобрала бы её на каждый ответ.
+        var updated = messages
+        for idx in updated.indices where updated[idx].replyToId == id {
+            updated[idx].replySender = nil
+            updated[idx].replyPreview = nil
+        }
+        messages = updated
+    }
+
     /// Сообщение удалили — оно не может остаться в полосе.
     private func dropPin(_ id: String) {
         guard pins.contains(where: { $0.id == id }) else { return }
@@ -661,6 +677,7 @@ final class ChatViewModel: ObservableObject {
             memberCount = dto.members.count
             members = dto.members.map(User.init(member:))
             canInvite = dto.me_can_invite ?? false
+            rebuildMentionIndex()
         }
         let key = feedChatKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? feedChatKey
         if let state = try? await APIClient.shared.get("/api/events/\(chat.dealId)/read-state?chat_key=\(key)",
@@ -854,6 +871,7 @@ final class ChatViewModel: ObservableObject {
             }
             let people = await DirectoryCache.colleagues()
             self.usersById = Dictionary(people.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            self.rebuildMentionIndex()
         }
     }
 
@@ -1205,6 +1223,28 @@ final class ChatViewModel: ObservableObject {
         let id: String
         let title: String
         let subtitle: String?
+    }
+
+    /// ФИО в нижнем регистре → id: по нему в тексте сообщения находим
+    /// «@Фамилия Имя» и уводим по нажатию в профиль.
+    ///
+    /// Держим готовым, а не считаем на лету: иначе словарь пересобирался бы
+    /// для каждого пузыря в ленте.
+    @Published private(set) var mentionIndex: [String: String] = [:]
+
+    /// Состав кладём после справочника: упоминают участников мероприятия, и
+    /// при совпадении ФИО их запись должна победить.
+    private func rebuildMentionIndex() {
+        var index: [String: String] = [:]
+        for user in usersById.values {
+            let name = user.fullName.lowercased()
+            if !name.isEmpty { index[name] = user.id }
+        }
+        for member in members {
+            let name = member.fullName.lowercased()
+            if !name.isEmpty { index[name] = member.id }
+        }
+        mentionIndex = index
     }
 
     // MARK: - Прочее

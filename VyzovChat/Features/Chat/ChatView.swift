@@ -543,6 +543,7 @@ struct ChatView: View {
             readAt: model.partnerReadAt,
             groupRead: showRead ? model.groupReadInfo(for: message) : nil,
             highlighted: highlightedId == message.id,
+            mentionPeople: model.mentionIndex,
             onLongPress: {
                 // «Поп» на САМОМ пузыре в чате (не на копии в меню): пузырь чуть
                 // вдавливается и упруго возвращается. Пузырь всегда отрисован,
@@ -852,7 +853,8 @@ struct ChatView: View {
         MessageBubble(message: msg,
                       isMine: model.isMine(msg),
                       sender: model.sender(msg),
-                      isDM: model.chat.isDirect)
+                      isDM: model.chat.isDirect,
+                      mentionPeople: model.mentionIndex)
             .allowsHitTesting(false)
     }
 
