@@ -1177,6 +1177,10 @@ final class ChatViewModel: ObservableObject {
         /// Превью для фото; у файлов его нет — покажем значок.
         let preview: UIImage?
         let name: String
+        /// Голосовое. Отдельно от «файла без превью»: у голосового и вид свой,
+        /// строкой, а не плиткой, — иначе отправленное выглядит как видео и
+        /// потом на глазах превращается в голосовое.
+        var isVoice: Bool = false
         var progress: Double = 0
 
         static func == (a: PendingUpload, b: PendingUpload) -> Bool {
@@ -1265,7 +1269,7 @@ final class ChatViewModel: ObservableObject {
         defer { try? FileManager.default.removeItem(at: result.url) }
         guard let data = try? Data(contentsOf: result.url) else { return }
 
-        let pending = PendingUpload(preview: nil, name: "Голосовое")
+        let pending = PendingUpload(preview: nil, name: "Голосовое", isVoice: true)
         pendingUploads.append(pending)
         defer { pendingUploads.removeAll { $0.id == pending.id } }
         do {

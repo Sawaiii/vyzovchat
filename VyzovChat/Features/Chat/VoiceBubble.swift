@@ -22,26 +22,76 @@ struct VoiceBubble: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 4) {
-                // Полоса воспроизведения. Длительность до первого запуска
-                // неизвестна — сервер её не присылает, поэтому до старта
-                // показываем ровную линию, а не ноль из ниоткуда.
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.18))
-                        Capsule().fill(Theme.accent)
-                            .frame(width: geo.size.width * player.progress)
-                    }
-                }
-                .frame(height: 4)
+                VoiceWaveform(seed: attachment.id, progress: player.progress)
+                    .frame(height: 26)
 
+                // Длительность до первого запуска неизвестна — сервер её не
+                // присылает, поэтому до старта там прочерк, а не ноль из ниоткуда.
                 Text(player.timeLabel)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Theme.textSecondary)
             }
-            .frame(width: 150)
+            .frame(width: 170)
         }
         .padding(.vertical, 4)
         .onDisappear { player.stop() }
+    }
+}
+
+/// Столбики голосового — «горы» вместо ровной полосы: сразу видно, что это
+/// звук, и по ним же видно, докуда доиграло.
+///
+/// Форма нарисована, а не измерена. Волну сервер не хранит и не отдаёт, а
+/// посчитать её по-настоящему можно только скачав и раскодировав сам файл —
+/// ради картинки под кнопкой это слишком дорого, и до нажатия «играть» файла у
+/// нас вообще нет. Зато форма постоянна: высоты выводятся из id вложения, и
+/// одно и то же сообщение всегда выглядит одинаково — и после перерисовки, и
+/// после перезапуска приложения.
+struct VoiceWaveform: View {
+    let seed: String
+    /// Доля проигранного, 0…1.
+    let progress: Double
+
+    private static let barCount = 34
+    private static let spacing: CGFloat = 2
+
+    var body: some View {
+        let bars = Self.bars(seed: seed)
+        GeometryReader { geo in
+            let total = Self.spacing * CGFloat(Self.barCount - 1)
+            let width = max(1, (geo.size.width - total) / CGFloat(Self.barCount))
+            HStack(spacing: Self.spacing) {
+                ForEach(bars.indices, id: \.self) { i in
+                    Capsule()
+                        .fill(played(i) ? Theme.accent : Color.white.opacity(0.28))
+                        .frame(width: width, height: max(3, geo.size.height * bars[i]))
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private func played(_ index: Int) -> Bool {
+        Double(index) / Double(Self.barCount) < progress
+    }
+
+    /// Высоты столбиков из id вложения.
+    ///
+    /// Своя арифметика, а не `hashValue`: тот у строк солится при каждом запуске
+    /// приложения, и волна у одного и того же сообщения менялась бы от запуска
+    /// к запуску. Здесь — FNV поверх байтов и обычный линейный генератор.
+    static func bars(seed: String) -> [CGFloat] {
+        var state: UInt64 = 1469598103934665603
+        for byte in seed.utf8 {
+            state = (state ^ UInt64(byte)) &* 1099511628211
+        }
+        return (0..<barCount).map { _ in
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let unit = CGFloat((state >> 33) % 1000) / 1000
+            // Не ниже четверти высоты: столбик в ноль читается как пропуск,
+            // будто там дырка в записи.
+            return 0.25 + unit * 0.75
+        }
     }
 }
 

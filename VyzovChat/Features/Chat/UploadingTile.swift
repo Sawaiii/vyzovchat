@@ -11,6 +11,36 @@ struct UploadingTile: View {
     private static let side: CGFloat = 140
 
     var body: some View {
+        if pending.isVoice { voiceRow } else { tile }
+    }
+
+    /// Уходящее голосовое показываем тем же, чем оно станет: строкой со
+    /// столбиками. Квадратная плитка с иконкой файла читалась как видео, и
+    /// сообщение на глазах превращалось из одного в другое.
+    private var voiceRow: some View {
+        HStack(spacing: Spacing.s) {
+            ZStack {
+                Circle().fill(Theme.accent.opacity(0.35)).frame(width: 36, height: 36)
+                Circle()
+                    .trim(from: 0, to: max(0.03, pending.progress))
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "mic.fill")
+                    .font(.caption).foregroundStyle(Theme.textOnAccent)
+            }
+            // Столбики те же, что будут у отправленного: сообщения ещё нет, и
+            // зерно берём у самой загрузки — форма всё равно своя у каждой.
+            VoiceWaveform(seed: pending.id, progress: 0)
+                .frame(width: 170, height: 26)
+                .opacity(0.5)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, Spacing.s)
+        .glass(cornerRadius: Theme.cornerMedium, elevated: false)
+    }
+
+    private var tile: some View {
         ZStack {
             if let preview = pending.preview {
                 Image(uiImage: preview)
