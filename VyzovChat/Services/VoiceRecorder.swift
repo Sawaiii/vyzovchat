@@ -16,6 +16,12 @@ actor AudioSessionGate {
         // .playAndRecord, а не .record: иначе после записи глохнет
         // воспроизведение уже отправленных голосовых.
         try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
+        // Буфер побольше — реже прерывания. Аудио идёт в потоке с приоритетом
+        // выше главного и вытесняет его на каждом буфере; при буфере по
+        // умолчанию это десятки раз в секунду, и приходится это ровно на время,
+        // когда палец ведёт кнопку. Для голосового сообщения задержка ввода
+        // роли не играет — это не разговор.
+        try? session.setPreferredIOBufferDuration(0.04)
         try session.setActive(true)
     }
 
@@ -146,7 +152,11 @@ final class VoiceRecorder: NSObject, ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 let settings: [String: Any] = [
                     AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                    AVSampleRateKey: 44100,
+                    // 24 кГц, а не 44,1: это речь, а не музыка. Слышимой разницы
+                    // нет, а кодировщику работы вдвое меньше — и файл вдвое
+                    // легче, что на площадке с плохой связью важнее качества,
+                    // которого всё равно не слышно.
+                    AVSampleRateKey: 24000,
                     AVNumberOfChannelsKey: 1,      // голос — моно, вдвое меньше данных
                     AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
                 ]
@@ -211,17 +221,23 @@ final class VoiceRecorder: NSObject, ObservableObject {
 
     private func startTimer() {
         timer?.invalidate()
-        // Счётчик показывает сотые, поэтому и тикать он должен чаще десяти раз
-        // в секунду — иначе цифры дёргаются через раз. Тикает он в отдельной
-        // маленькой вью, так что перерисовка дешёвая.
+        // Тикаем чаще, чем меняется цифра: так смена десятой доли не запаздывает
+        // на полтика. Публикуем при этом только саму смену — см. ниже.
         let tick = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             // Таймер добавлен в главный цикл — значит, мы уже на главном
             // потоке, и прыгать через задачу незачем: двадцать задач в секунду
             // и сами по себе работа, и обновление счётчика от них отстаёт.
             MainActor.assumeIsolated {
                 guard let self, self.recorder != nil else { return }
-                self.duration = self.elapsed
-                if self.duration >= self.maxDuration { self.onLimitReached?() }
+                // Считаем в десятых и публикуем, только когда цифра правда
+                // сменилась. Каждая публикация — это обновление интерфейса, а
+                // приходятся они на то же время, когда палец ведёт кнопку
+                // записи. Сотые доли столько не стоят: их всё равно не успеть
+                // прочитать, а обновлений от них вдвое больше.
+                let value = Double(Int(self.elapsed * 10)) / 10
+                guard value != self.duration else { return }
+                self.duration = value
+                if value >= self.maxDuration { self.onLimitReached?() }
             }
         }
         // В общий режим, а не в обычный: пока палец ведёт кнопку или лента

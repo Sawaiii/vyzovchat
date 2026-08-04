@@ -46,9 +46,9 @@ struct RecordingBar: View {
     }
 }
 
-/// Точка и время записи — единственное, что обновляется двадцать раз в секунду.
+/// Точка и время записи — единственное, что обновляется во время записи.
 ///
-/// Ширина задана жёстко. Без неё каждая сотая доля меняла ширину текста, а
+/// Ширина задана жёстко. Без неё каждая смена цифры меняла ширину текста, а
 /// значит и раскладку строки ввода, и пересчёт уходил вверх по дереву — до
 /// ленты сообщений. С фиксированным размером система знает, что снаружи ничего
 /// не изменилось, и дальше счётчика не идёт.
@@ -73,9 +73,10 @@ private struct RecordingCounter: View {
         return recorder.duration.truncatingRemainder(dividingBy: 1) < 0.5 ? 1 : 0.25
     }
 
+    /// Всё считаем в десятых долях одним целым числом. Через разность с целой
+    /// частью получалось «3,3» как «3,2»: 0.3 в двоичной дроби чуть меньше себя.
     private static func durationLabel(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        let hundredths = Int((seconds - Double(total)) * 100)
-        return String(format: "%d:%02d,%02d", total / 60, total % 60, hundredths)
+        let tenths = Int((seconds * 10).rounded())
+        return String(format: "%d:%02d,%d", tenths / 600, (tenths / 10) % 60, tenths % 10)
     }
 }

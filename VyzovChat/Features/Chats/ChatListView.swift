@@ -51,6 +51,12 @@ struct ChatListView: View {
                 .padding(.top, Spacing.s)
             }
             .navigationTitle("Чаты")
+            // Вкладки здесь объявлены видимыми явно, хотя они и так видны. Чат
+            // их прячет, и без этой пары система узнаёт, что бар пора вернуть,
+            // только когда возврат уже доигран, — он выскакивал поверх списка.
+            // С объявленным состоянием на обоих концах бар едет вместе с
+            // переходом.
+            .toolbar(.visible, for: .tabBar)
             .searchable(text: $query, prompt: "Поиск по названию")
             .navigationDestination(item: $openChat) { chat in
                 ChatView(chat: chat, currentUserId: session.currentUser?.id ?? "")
