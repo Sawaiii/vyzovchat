@@ -170,14 +170,13 @@ struct ChatView: View {
                 else if let reply = model.replyingTo { replyBar(reply) }
                 inputBar
             }
-            // Пока держим меню — чат уходит на задний план: размывается, на виду
-            // остаётся только выбранное сообщение. ТОЛЬКО blur (рендер-фильтр, не
-            // трогает лейаут/скролл). scaleEffect убран: уменьшение ленты к центру
-            // сдвигало нижние сообщения вверх и «переякоривало» прижатую к низу
-            // ленту — в ЛС при вызове меню на последних сообщениях чат съезжал, а
-            // после закрытия приходилось листать обратно. Глубину даёт затемнение
-            // из messageMenu. Без .animation(value:) — анимируем через withAnimation.
-            .blur(radius: menuMessage != nil ? 8 : 0)
+            // Размытия чата здесь больше нет. `.blur` — фильтр слоя, и он
+            // работает всегда, а не только когда радиус больше нуля: весь чат
+            // уходил в отдельный буфер и пересобирался на каждом кадре. Отсюда
+            // и общая вязкость — и прокрутки, и любой анимации поверх ленты.
+            // Размывает теперь сама подложка меню, и только пока меню открыто.
+            // (scaleEffect тут был убран раньше: уменьшение ленты к центру
+            // «переякоривало» прижатую к низу ленту, и чат съезжал.)
 
             if let msg = menuMessage { messageMenu(msg) }
         }
@@ -529,14 +528,22 @@ struct ChatView: View {
                     model.jumpToMessageId = nil
                 }
                 .onChange(of: scrollTarget) {
-                    if isActive, let target = scrollTarget {
+                    guard isActive, let target = scrollTarget else { return }
+                    scrollTarget = nil
+                    highlightedId = target
+                    if model.jumpNeedsSettle {
+                        // Лента только что подменилась окном вокруг сообщения:
+                        // едем сразу, без анимации, и повторяем, пока список
+                        // достраивается — первая попытка приходится на кадр,
+                        // где нужной ячейки ещё нет.
+                        model.jumpNeedsSettle = false
+                        settleCentered(proxy, to: target)
+                    } else {
                         withAnimation(.smooth) { proxy.scrollTo(target, anchor: .center) }
-                        highlightedId = target
-                        scrollTarget = nil
-                        Task {
-                            try? await Task.sleep(for: .milliseconds(1300))
-                            withAnimation { highlightedId = nil }
-                        }
+                    }
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(1300))
+                        withAnimation { highlightedId = nil }
                     }
                 }
 
@@ -562,6 +569,21 @@ struct ChatView: View {
         }
     }
 
+
+    /// Доводчик для перехода в середину ленты. Тот же приём, что и у конца
+    /// ленты: в ленивом списке первая попытка часто не доезжает — ячейки ещё
+    /// не построены, а после подмены ленты нужной может не быть вовсе.
+    /// Без анимации: анимировать доводку к цели, которая ещё едет, — это и
+    /// есть та самая дёрганая прокрутка.
+    private func settleCentered(_ proxy: ScrollViewProxy, to id: String) {
+        proxy.scrollTo(id, anchor: .center)
+        Task {
+            for delay in [16, 60, 160, 350] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                proxy.scrollTo(id, anchor: .center)
+            }
+        }
+    }
 
     /// Кнопка «в конец диалога». Видна, только когда пользователь листает вниз
     /// и ещё не достиг конца.
@@ -669,7 +691,13 @@ struct ChatView: View {
     private func messageMenu(_ msg: Message) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.45).ignoresSafeArea()
+                // Подложка и размывает чат, и затемняет его. Размытие живёт
+                // здесь, а не на самом чате: слой-фильтр поверх ленты работает
+                // постоянно, даже с нулевым радиусом, и стоит кадра. Меню же
+                // появляется на секунду и на статичном экране.
+                Color.black.opacity(0.45)
+                    .background(.ultraThinMaterial)
+                    .ignoresSafeArea()
                     .onTapGesture { closeMenu() }
 
                 // Раскладываем, только когда известен кадр сообщения — иначе

@@ -154,12 +154,17 @@ final class VoiceRecorder: NSObject, ObservableObject {
         // Счётчик показывает сотые, поэтому и тикать он должен чаще десяти раз
         // в секунду — иначе цифры дёргаются через раз. Тикает он в отдельной
         // маленькой вью, так что перерисовка дешёвая.
-        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        let tick = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let recorder = self.recorder else { return }
                 self.duration = recorder.currentTime
                 if self.duration >= self.maxDuration { self.onLimitReached?() }
             }
         }
+        // В общий режим, а не в обычный: пока палец ведёт кнопку или лента
+        // прокручивается, цикл событий работает в режиме отслеживания, и
+        // счётчик просто замирал до конца жеста — а потом прыгал.
+        RunLoop.main.add(tick, forMode: .common)
+        timer = tick
     }
 }

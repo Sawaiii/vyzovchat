@@ -730,9 +730,16 @@ final class ChatViewModel: ObservableObject {
     /// к следующему закрепу.
     func goToPinned() async {
         guard let current = pinned else { return }
-        // В личной переписке лента приходит целиком — догружать нечего.
-        if chat.isDirect || messages.contains(where: { $0.id == current.id }) {
+        if messages.contains(where: { $0.id == current.id }) {
+            jumpNeedsSettle = false
             jumpToMessageId = current.id
+        } else if chat.isDirect {
+            // Личная переписка приходит последней сотней, и окна вокруг
+            // сообщения у неё на сервере нет. Прокрутка к незагруженному
+            // сообщению не сработает — молча оставаться на месте хуже, чем
+            // сказать почему.
+            pinError = "Закреплённое сообщение старше загруженной переписки — открыть его пока нельзя."
+            return
         } else {
             await openFound(current)
         }
@@ -1375,11 +1382,19 @@ final class ChatViewModel: ObservableObject {
         messagesByTopic[topicKey(message.topicId)] = window
         // Через initialAnchorId нельзя: он срабатывает только на первой загрузке
         // чата, а тут лента уже открыта — прокрутка ушла бы в конец.
+        jumpNeedsSettle = true
         jumpToMessageId = message.id
     }
 
     /// Куда проматывать ленту с подсветкой (переход из поиска или из цитаты).
     @Published var jumpToMessageId: String?
+
+    /// Лента под этим переходом только что заменилась целиком — окном вокруг
+    /// сообщения. Прокручивать сразу бесполезно: ячейки с нужным id в ленивом
+    /// списке ещё нет, прокрутка молча ничего не делает, и остаёшься где-то
+    /// посреди только что подставленной ленты — со стороны это выглядит как
+    /// «перекинуло вверх на случайное сообщение». Такой переход нужно доводить.
+    @Published var jumpNeedsSettle = false
 
     /// В открытую ленту ДОБАВИЛОСЬ сообщение — можно доскроллить к нему.
     ///
