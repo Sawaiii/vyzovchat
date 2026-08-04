@@ -10,10 +10,9 @@ struct ChatView: View {
     @State private var showMembers = false
     @State private var showEditEvent = false
     @State private var showShifts = false
-    /// Открыта строка поиска. Поиск в чате — дело редкое, и держать под шапкой
-    /// постоянную строку ради него незачем.
+    /// Открыто окно поиска. Отдельным окном, а не строкой под шапкой: строка
+    /// занимала место всегда, а найденное подменяло собой ленту.
     @State private var showSearch = false
-    @FocusState private var searchFocused: Bool
     @State private var showEventInfo = false
     @State private var showGallery = false
     @State private var showCreateTopic = false
@@ -115,7 +114,6 @@ struct ChatView: View {
         ZStack {
             chatBackground
             VStack(spacing: 0) {
-                if showSearch { searchBar }
                 if !model.chat.isDirect {
                     // Шапка — один блок с общим фоном и общим шагом по
                     // вертикали: раньше каждая полоса несла свои отступы, и они
@@ -200,17 +198,11 @@ struct ChatView: View {
         // объявленная на списке видимость распространяется на весь стек и
         // отменяет скрытие вовсе. Пусть лучше стоит на месте.
         // Штатного `searchable` здесь нет намеренно: он держит под шапкой целую
-        // строку всегда, а ищут в чате изредка. Поиск открывается кнопкой и
-        // занимает место, только пока им пользуются.
-        //
-        // Убрали клавиатуру, ничего не набрав, — закрываем и строку: пустая, но
-        // открытая, она занимает место и держит ленту в режиме поиска. С
-        // набранным запросом оставляем: найденное и есть то, что сейчас на
-        // экране, и закрыть строку значило бы его выбросить.
-        .onChange(of: searchFocused) {
-            guard !searchFocused,
-                  model.search.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            withAnimation(.smooth(duration: 0.2)) { showSearch = false }
+        // строку всегда, а ищут в чате изредка. Поиск живёт в своём окне.
+        .sheet(isPresented: $showSearch) {
+            ChatSearchView(model: model) { message in
+                Task { await model.openFound(message) }
+            }
         }
         .toolbar {
             if model.chat.isDirect {
@@ -225,16 +217,15 @@ struct ChatView: View {
             // выездник должен в одно касание, а не вспоминать, что это спрятано
             // за многоточием. Остальное меню держим одним пунктом (см. ниже),
             // так что кнопок в тулбаре по-прежнему две и переполнение не грозит.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    withAnimation(.smooth(duration: 0.2)) { showSearch = true }
-                    searchFocused = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .accessibilityLabel("Поиск в чате")
-            }
             if !model.chat.isDirect {
+                // Поиск — только у мероприятия: искать по переписке сервер
+                // не умеет, а её последняя сотня и так вся перед глазами.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel("Поиск в чате")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showShifts = true } label: {
                         Image(systemName: "clock.badge.checkmark")
@@ -486,21 +477,10 @@ struct ChatView: View {
                                 UploadingTile(pending: pending)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             case .message(let message, let showRead):
-                                if model.search.isEmpty {
-                                    bubble(for: message, showRead: showRead)
-                                } else {
-                                    // В режиме поиска сообщение — это ссылка: по нажатию
-                                    // подгружаем окно ленты вокруг него и открываем там.
-                                    // Найденное может быть и в другой теме, и вне
-                                    // последней сотни — иначе перейти к нему некуда.
-                                    Button {
-                                        UIApplication.shared.endEditing()
-                                        Task { await model.openFound(message) }
-                                    } label: {
-                                        bubble(for: message, showRead: showRead)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                                // Лента всегда лента. Режима поиска, в котором
+                                // сообщения превращались в ссылки, здесь больше
+                                // нет: найденное живёт в своём окне.
+                                bubble(for: message, showRead: showRead)
                             }
                         }
 
@@ -1136,20 +1116,14 @@ struct ChatView: View {
         mediaPreview = MediaPreview(items: all, index: idx)
     }
 
+    /// Заглушка пустой ленты. Про поиск здесь больше ничего нет: он в своём
+    /// окне, и «ничего не найдено» говорит оно само.
     private var emptyState: some View {
         VStack(spacing: Spacing.s) {
-            // Пока ответ поиска не пришёл, «Ничего не найдено» показывать нельзя —
-            // иначе оно мигает на каждой букве.
-            if model.isSearching {
-                ProgressView().tint(Theme.accent)
-                Text("Ищем по всему мероприятию…")
-                    .font(Typography.subheadline).foregroundStyle(Theme.textSecondary)
-            } else {
-                Image(systemName: model.search.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
-                    .font(.largeTitle).foregroundStyle(Theme.textSecondary)
-                Text(model.search.isEmpty ? "Пока нет сообщений" : "Ничего не найдено")
-                    .font(Typography.subheadline).foregroundStyle(Theme.textSecondary)
-            }
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.largeTitle).foregroundStyle(Theme.textSecondary)
+            Text("Пока нет сообщений")
+                .font(Typography.subheadline).foregroundStyle(Theme.textSecondary)
         }
         .allowsHitTesting(false)   // заглушка не должна перехватывать свайп между темами
     }
@@ -1234,32 +1208,6 @@ struct ChatView: View {
             }
         }
         .padding(.horizontal, Spacing.s).padding(.vertical, 6)
-        .background(Theme.panel)
-    }
-
-    /// Строка поиска — открывается кнопкой в шапке и закрывается вместе с
-    /// запросом: оставить её пустой, но открытой, значит оставить ленту в
-    /// режиме поиска, где сообщения не пузыри, а ссылки.
-    private var searchBar: some View {
-        HStack(spacing: Spacing.s) {
-            Image(systemName: "magnifyingglass")
-                .font(.footnote).foregroundStyle(Theme.textSecondary)
-            TextField("Поиск в чате", text: $model.search)
-                .focused($searchFocused)
-                .submitLabel(.search)
-            if !model.search.isEmpty {
-                Button { model.search = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
-                }
-            }
-            Button("Отмена") {
-                model.search = ""
-                searchFocused = false
-                withAnimation(.smooth(duration: 0.2)) { showSearch = false }
-            }
-            .font(Typography.callout).foregroundStyle(Theme.accent)
-        }
-        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
         .background(Theme.panel)
     }
 

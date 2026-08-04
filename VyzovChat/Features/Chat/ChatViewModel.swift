@@ -25,9 +25,10 @@ final class ChatViewModel: ObservableObject {
     // приходило на цикл позже: лента моргала пустой и «допрыгивала» (баунс).
     @Published var messages: [Message] = [] { didSet { rebuildActiveFeed() } }
     @Published var draft = ""
-    @Published var search = "" { didSet { rebuildActiveFeed(); scheduleServerSearch() } }
+    /// Запрос в окне поиска. Ленту чата не трогает — см. `visibleMessages`.
+    @Published var search = "" { didSet { scheduleServerSearch() } }
     /// Найденное сервером по всему мероприятию.
-    @Published private(set) var searchResults: [Message] = [] { didSet { rebuildActiveFeed() } }
+    @Published private(set) var searchResults: [Message] = []
     /// Идёт запрос поиска — чтобы «Ничего не найдено» не мигало раньше времени.
     @Published private(set) var isSearching = false
     @Published var isLoading = true
@@ -92,12 +93,10 @@ final class ChatViewModel: ObservableObject {
     /// При поиске отдаём результаты сервера: он ищет по всему мероприятию и по всем
     /// видимым темам, а не по загруженной сотне сообщений открытой ленты. Пока ответ
     /// не пришёл, показываем отфильтрованное локально — иначе лента моргала бы пустой.
-    var visibleMessages: [Message] {
-        let q = search.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return messages }
-        if !searchResults.isEmpty { return searchResults }
-        return messages.filter { $0.text?.localizedCaseInsensitiveContains(q) == true }
-    }
+    /// Лента чата. Поиск её больше не подменяет: найденное живёт в своём окне,
+    /// а чат под ним остаётся чатом — иначе переход к сообщению начинался с
+    /// того, что лента сначала превращалась в список ссылок и обратно.
+    var visibleMessages: [Message] { messages }
 
     /// Все фото/видео чата — для листания в полноэкранном просмотре.
     var mediaAttachments: [Message.Attachment] {
@@ -140,10 +139,7 @@ final class ChatViewModel: ObservableObject {
     private func rebuildActiveFeed() {
         var feed = buildFeed(visibleMessages)
         // Загружаемые вложения — в самом конце, после всех сообщений.
-        // При поиске их не показываем: там лента не своя.
-        if search.trimmingCharacters(in: .whitespaces).isEmpty {
-            feed.append(contentsOf: pendingUploads.map { ChatFeedItem.uploading($0) })
-        }
+        feed.append(contentsOf: pendingUploads.map { ChatFeedItem.uploading($0) })
         activeFeed = feed
     }
 
@@ -454,6 +450,13 @@ final class ChatViewModel: ObservableObject {
 
     /// Слот темы в ответах сервера: «Общий» проходит как "main".
     private func topicKey(_ id: Int?) -> String { id.map(String.init) ?? "main" }
+
+    /// Название темы для подписи — например, у найденного сообщения.
+    func topicName(_ id: Int?) -> String? {
+        guard !chat.isDirect else { return nil }
+        guard let id else { return "Общий" }
+        return topics.first { $0.id == id }?.name
+    }
 
     /// Забрать счётчики тем и обнулить открытую.
     ///
