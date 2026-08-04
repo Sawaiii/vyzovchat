@@ -25,6 +25,9 @@ struct ChatView: View {
     @State private var profileUser: User?
     @State private var scrollTarget: String?
     @State private var highlightedId: String?
+    /// Доводка прокрутки к сообщению — держим, чтобы прервать её, как только
+    /// ленту тронут рукой.
+    @State private var settleTask: Task<Void, Never>?
     @State private var forwardingMessage: Message?
     @State private var didInitialScroll = false
     @State private var menuMessage: Message?
@@ -521,7 +524,15 @@ struct ChatView: View {
                 }
                 .modifier(BottomTracking { if isActive { updateAtBottom($0) } })
                 .scrollDismissesKeyboard(.interactively)
-                .simultaneousGesture(TapGesture().onEnded { UIApplication.shared.endEditing() })
+                .simultaneousGesture(TapGesture().onEnded {
+                    UIApplication.shared.endEditing()
+                    settleTask?.cancel()
+                })
+                // Только чтобы узнать, что ленту листают рукой: прокрутке этот
+                // жест не мешает (идёт рядом и ничего не забирает), а доводку
+                // после перехода к сообщению надо в этот момент прекратить.
+                .simultaneousGesture(DragGesture(minimumDistance: 8)
+                    .onChanged { _ in settleTask?.cancel() })
                 // Первая загрузка чата: есть непрочитанные — встаём там, где они
                 // начинаются; иначе строго в конце ленты.
                 .onChange(of: model.messages.count) {
@@ -610,12 +621,17 @@ struct ChatView: View {
     /// есть та самая дёрганая прокрутка.
     private func settleCentered(_ proxy: ScrollViewProxy, to id: String) {
         proxy.scrollTo(id, anchor: .center)
-        Task {
-            // Долго и с запасом: лента прижата к низу, и пока она достраивается
-            // после подмены, каждый её перерасчёт тянет прокрутку обратно в
-            // конец. Побеждает тот, кто скажет последним.
-            for delay in [16, 60, 120, 200, 320, 500, 750, 1050] {
+        settleTask?.cancel()
+        settleTask = Task {
+            // С запасом: лента прижата к низу, и пока она достраивается после
+            // подмены, каждый её перерасчёт тянет прокрутку обратно в конец.
+            // Побеждает тот, кто скажет последним.
+            for delay in [16, 60, 120, 200, 320, 500, 750] {
                 try? await Task.sleep(for: .milliseconds(delay))
+                // Тронули ленту рукой — доводка прекращается. Иначе очередной
+                // повтор дёргал обратно к сообщению человека, который уже начал
+                // листать от него дальше.
+                if Task.isCancelled { return }
                 proxy.scrollTo(id, anchor: .center)
             }
         }
