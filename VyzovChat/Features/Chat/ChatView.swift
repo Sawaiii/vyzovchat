@@ -199,6 +199,16 @@ struct ChatView: View {
         // Штатного `searchable` здесь нет намеренно: он держит под шапкой целую
         // строку всегда, а ищут в чате изредка. Поиск открывается кнопкой и
         // занимает место, только пока им пользуются.
+        //
+        // Убрали клавиатуру, ничего не набрав, — закрываем и строку: пустая, но
+        // открытая, она занимает место и держит ленту в режиме поиска. С
+        // набранным запросом оставляем: найденное и есть то, что сейчас на
+        // экране, и закрыть строку значило бы его выбросить.
+        .onChange(of: searchFocused) {
+            guard !searchFocused,
+                  model.search.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+            withAnimation(.smooth(duration: 0.2)) { showSearch = false }
+        }
         .toolbar {
             if model.chat.isDirect {
                 ToolbarItem(placement: .principal) {
