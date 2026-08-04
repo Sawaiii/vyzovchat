@@ -185,10 +185,12 @@ struct ChatView: View {
         .coordinateSpace(name: Self.chatSpace)
         .navigationTitle(model.chat.title)
         .navigationBarTitleDisplayMode(.inline)
-        // В переписке нижние вкладки не нужны: они занимают место под строкой
-        // ввода и никуда отсюда не ведут. Стоит на самом чате, а не на местах,
-        // откуда его открывают, — открывают его из четырёх разных экранов.
-        .toolbar(.hidden, for: .tabBar)
+        // Нижние вкладки в переписке НЕ прячем. `.toolbar(.hidden, for: .tabBar)`
+        // здесь работает, но появляется и исчезает бар отдельно от перехода:
+        // при входе пропадает разом, при возврате выскакивает поверх уже
+        // открытого списка. Сгладить это средствами SwiftUI не выходит —
+        // объявленная на списке видимость распространяется на весь стек и
+        // отменяет скрытие вовсе. Пусть лучше стоит на месте.
         .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .automatic),
                     prompt: "Поиск в чате")
         .toolbar {

@@ -40,13 +40,13 @@ struct MicRecordButton: View {
     /// записи. Зафиксированная крупнее: палец с неё убран, ничего её не
     /// закрывает, и она теперь главное на экране — это кнопка отправки.
     static let pressedScale: CGFloat = 2
-    static let lockedScale: CGFloat = 2.5
+    static let lockedScale: CGFloat = 1.8
 
     /// Выросший круг не помещается в свой угол: половина ушла бы за правый край
     /// экрана и под строку ввода. Сдвигаем его целиком — вместе с волной и
     /// паузой, потому и живёт сдвиг здесь, а не внутри круга.
     private var lockedShift: CGSize {
-        isLocked ? CGSize(width: -28, height: -16) : .zero
+        isLocked ? CGSize(width: -16, height: -10) : .zero
     }
 
     var body: some View {
@@ -86,7 +86,7 @@ struct MicRecordButton: View {
             }
             // Выше, чем замок: под ней теперь выросший до отправки круг, и с
             // прежней высоты она легла бы прямо на него.
-            .offset(y: -84)
+            .offset(y: -70)
         } else {
             VStack(spacing: 6) {
                 Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
@@ -241,8 +241,8 @@ private struct VoiceLevelWave: View {
 
     var body: some View {
         ZStack {
-            ring(opacity: 0.16, spread: 0.6)
-            ring(opacity: 0.10, spread: 1.1)
+            ring(opacity: 0.16, spread: 1.2)
+            ring(opacity: 0.10, spread: 2.1)
         }
         .frame(width: 40, height: 40)
         // Между замерами (двадцать в секунду) волна доезжает сама, иначе она

@@ -51,9 +51,6 @@ struct ChatListView: View {
                 .padding(.top, Spacing.s)
             }
             .navigationTitle("Чаты")
-            // Объявлять здесь `.toolbar(.visible, for: .tabBar)` нельзя: эта
-            // видимость распространяется на весь стек и перебивает `.hidden`
-            // у открытого поверх чата — бар оставался висеть в переписке.
             .searchable(text: $query, prompt: "Поиск по названию")
             .navigationDestination(item: $openChat) { chat in
                 ChatView(chat: chat, currentUserId: session.currentUser?.id ?? "")
