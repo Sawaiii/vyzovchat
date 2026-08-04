@@ -42,9 +42,6 @@ struct UserProfileView: View {
         }
         .navigationTitle("Профиль")
         .navigationBarTitleDisplayMode(.inline)
-        // Отсюда открывается личная переписка, а она вкладки прячет: объявляем
-        // видимость и здесь, иначе бар выскакивает уже после возврата.
-        .toolbar(.visible, for: .tabBar)
         .fullScreenCover(item: $mediaPreview) { preview in
             MediaPager(items: preview.items, startIndex: preview.index)
         }

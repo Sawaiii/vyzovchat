@@ -89,9 +89,6 @@ struct DealDetailView: View {
         }
         .navigationTitle("Заказ")
         .navigationBarTitleDisplayMode(.inline)
-        // Отсюда открывается чат, а он вкладки прячет: объявляем видимость и на
-        // этом конце, иначе бар возвращается уже после перехода, поверх экрана.
-        .toolbar(.visible, for: .tabBar)
         .toolbar {
             if session.currentUser?.isAdmin == true {
                 ToolbarItem(placement: .topBarTrailing) {
