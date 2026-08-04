@@ -28,6 +28,16 @@ struct MicRecordButton: View {
     /// Палец дошёл до замка — подсвечиваем цель, чтобы было видно, что дальше
     /// вести не надо.
     @State private var lockArmed = false
+    /// Стадия текущего жеста.
+    @State private var phase: Phase = .idle
+
+    /// Жест живёт дольше, чем запись: после фиксации или отмены палец обычно
+    /// ещё едет, и события продолжают сыпаться. Без явной стадии такое событие
+    /// выглядело как новое касание — запись стартовала заново, тут же
+    /// отменялась следующим кадром, и так десятки раз за свайп. Каждый круг —
+    /// это включение и выключение аудиосессии на главном потоке, отсюда и
+    /// рывки. `spent` означает «жест своё отработал, ждём отпускания».
+    private enum Phase { case idle, tracking, spent }
 
     /// Насколько вести палец вверх до фиксации. Ровно до замка: он висит на
     /// этом же расстоянии, и «дошёл до иконки» должно значить «сработало».
@@ -69,29 +79,40 @@ struct MicRecordButton: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 // Зафиксированную запись жест не трогает: круг стал обычной
-                // кнопкой «отправить».
-                guard !isLocked else { return }
-                if !pressing {
+                // кнопкой «отправить». Отработавший жест — тоже: решение уже
+                // принято, дальше палец просто едет.
+                guard !isLocked, phase != .spent else { return }
+                if phase == .idle {
+                    phase = .tracking
                     pressing = true
                     lockArmed = false
                     onStart()
                 }
                 let dx = max(min(0, value.translation.width), -cancelDistance)
                 let dy = max(min(0, value.translation.height), -70)
-                drag = CGSize(width: dx, height: dy)
-                // Вверх до замка — фиксируем, влево — отменяем.
-                if dy < -lockDistance {
-                    reset()
-                    Haptics.success()
-                    onLock()
-                } else if value.translation.width < -cancelDistance {
-                    reset()
-                    onCancel()
+                // Вверх до замка — фиксируем, влево — отменяем. Считаем по
+                // сырому смещению: обрезанное упирается в порог и на резком
+                // свайпе никогда его не переходит. Резкий свайп ещё и приходит
+                // сразу по диагонали, поэтому берём не тот порог, который
+                // проверили первым, а тот, что перекрыт сильнее.
+                let toLock = -value.translation.height / lockDistance
+                let toCancel = -value.translation.width / cancelDistance
+                if toLock >= 1 || toCancel >= 1 {
+                    finishGesture()
+                    if toLock >= toCancel {
+                        Haptics.success()
+                        onLock()
+                    } else {
+                        onCancel()
+                    }
                 } else {
+                    drag = CGSize(width: dx, height: dy)
                     lockArmed = dy < -25
                 }
             }
             .onEnded { value in
+                let wasTracking = phase == .tracking
+                phase = .idle
                 if isLocked {
                     // Касание по кругу отправляет. Смазанное касание — это уже
                     // прокрутка чего-то другого, не отправка.
@@ -100,17 +121,27 @@ struct MicRecordButton: View {
                     }
                     return
                 }
-                guard pressing else { return }
-                reset()
+                // Жест уже закрылся замком или отменой — отправлять нечего.
+                guard wasTracking else { return }
+                release()
                 onFinish()
             }
     }
 
+    /// Жест принял решение (замок или отмена): палец ещё на экране, но больше
+    /// ничего не решает.
+    private func finishGesture() {
+        phase = .spent
+        release()
+    }
+
     /// Кнопка вернулась на место, палец больше не считается прижатым.
-    private func reset() {
+    /// Возврат — с пружиной: на резком свайпе круг уезжает далеко, и прыжок
+    /// назад без анимации читается как сбой.
+    private func release() {
         pressing = false
         lockArmed = false
-        drag = .zero
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { drag = .zero }
     }
 
     /// Всплывающая панель над кнопкой: пока держим — замок, к которому ведут

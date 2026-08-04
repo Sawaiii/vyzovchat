@@ -1188,6 +1188,10 @@ final class ChatViewModel: ObservableObject {
     private var recordingStart: Task<Void, Never>?
 
     func startRecording() async {
+        // Вторая запись поверх первой — всегда ошибка вызывающего: жест мог
+        // прислать «начать» дважды. Раньше это разворачивалось в лишний круг
+        // «включить сессию — выключить сессию» и подвешивало интерфейс.
+        guard recordingStart == nil, !isRecording else { return }
         let task = Task { @MainActor in
             do {
                 try await recorder.start()
@@ -1212,6 +1216,7 @@ final class ChatViewModel: ObservableObject {
 
     func cancelRecording() async {
         await recordingStart?.value
+        recordingStart = nil
         recorder.cancel()
         isRecording = false
         isRecordingLocked = false
@@ -1225,6 +1230,7 @@ final class ChatViewModel: ObservableObject {
         // Дожидаемся запуска: иначе короткое нажатие останавливало «ничего»,
         // а запись продолжала идти.
         await recordingStart?.value
+        recordingStart = nil
         let stopped = recorder.stop()
         isRecording = false
         isRecordingLocked = false

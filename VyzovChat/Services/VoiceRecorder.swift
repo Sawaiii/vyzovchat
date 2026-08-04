@@ -1,5 +1,29 @@
 import AVFoundation
 
+/// Включение и выключение аудиосессии.
+///
+/// Вынесено в актор по двум причинам. Первая: `setActive` — синхронный вызов на
+/// десятки миллисекунд, и с главного потока он приходился ровно на начало
+/// жеста записи, когда палец уже поехал, — получался рывок. Вторая: включение и
+/// выключение должны идти строго по очереди, иначе запоздавшее выключение
+/// гасит уже начатую следующую запись.
+actor AudioSessionGate {
+    static let shared = AudioSessionGate()
+
+    func activateRecording() throws {
+        let session = AVAudioSession.sharedInstance()
+        // .playAndRecord, а не .record: иначе после записи глохнет
+        // воспроизведение уже отправленных голосовых.
+        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
+        try session.setActive(true)
+    }
+
+    func deactivate() {
+        try? AVAudioSession.sharedInstance()
+            .setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
 /// Запись голосового сообщения.
 ///
 /// Пишем в m4a (AAC) — этот формат сервер принимает по белому списку загрузок
@@ -53,12 +77,8 @@ final class VoiceRecorder: NSObject, ObservableObject {
         guard !isRecording else { return }
         guard await requestPermission() else { throw RecorderError.noPermission }
 
-        let session = AVAudioSession.sharedInstance()
         do {
-            // .playAndRecord, а не .record: иначе после записи глохнет
-            // воспроизведение уже отправленных голосовых.
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            try await AudioSessionGate.shared.activateRecording()
         } catch {
             throw RecorderError.failed
         }
@@ -126,7 +146,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
         isRecording = false
         isPaused = false
         duration = 0
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        Task { await AudioSessionGate.shared.deactivate() }
     }
 
     private func startTimer() {
