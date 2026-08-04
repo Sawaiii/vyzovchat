@@ -62,27 +62,38 @@ final class AudioPlayer: NSObject, ObservableObject {
             isPlaying = false
             return
         }
-        if player == nil {
-            // .playback — иначе звук уходит в «тихий» режим и на выезде его
-            // просто не слышно при включённом беззвучном переключателе.
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
-            let item = AVPlayerItem(url: url)
-            let player = AVPlayer(playerItem: item)
-            self.player = player
-            observer = player.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
-            ) { [weak self] time in
-                Task { @MainActor in self?.tick(time) }
-            }
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.finish() }
-            }
-        }
-        player?.play()
         isPlaying = true
+        guard player == nil else {
+            player?.play()
+            return
+        }
+        // Настройка сессии — через общий шлюз и не на главном потоке: сам вызов
+        // стоит десятки миллисекунд, а очередь нужна, чтобы он не столкнулся с
+        // включением записи. Звук пускаем уже после: включи раньше — первые
+        // мгновения ушли бы в прежнюю категорию, а с включённым беззвучным
+        // переключателем это просто тишина.
+        Task {
+            await AudioSessionGate.shared.activatePlayback()
+            guard isPlaying else { return }   // успели нажать паузу
+            makePlayer(url)
+            player?.play()
+        }
+    }
+
+    private func makePlayer(_ url: URL) {
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        self.player = player
+        observer = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
+        ) { [weak self] time in
+            Task { @MainActor in self?.tick(time) }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.finish() }
+        }
     }
 
     func stop() {

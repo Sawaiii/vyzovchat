@@ -18,6 +18,14 @@ actor AudioSessionGate {
         try session.setActive(true)
     }
 
+    /// Сессия под прослушивание голосового. `.playback` — иначе звук уходит в
+    /// «тихий» режим и на выезде его не слышно при включённом переключателе.
+    func activatePlayback() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio)
+        try? session.setActive(true)
+    }
+
     func deactivate() {
         try? AVAudioSession.sharedInstance()
             .setActive(false, options: .notifyOthersOnDeactivation)
@@ -65,8 +73,11 @@ final class VoiceRecorder: NSObject, ObservableObject {
     }
 
     /// Спросить разрешение на микрофон (в первый раз система покажет запрос).
+    /// Когда доступ уже выдан — отвечаем сразу, без похода в систему: этот
+    /// поход стоит миллисекунд, а приходится он ровно на начало жеста.
     func requestPermission() async -> Bool {
-        await withCheckedContinuation { cont in
+        if AVAudioApplication.shared.recordPermission == .granted { return true }
+        return await withCheckedContinuation { cont in
             AVAudioApplication.requestRecordPermission { granted in
                 cont.resume(returning: granted)
             }
@@ -86,21 +97,46 @@ final class VoiceRecorder: NSObject, ObservableObject {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("voice-\(UUID().uuidString)")
             .appendingPathExtension("m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1,          // голос — моно, вдвое меньше данных
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
-        ]
-        guard let recorder = try? AVAudioRecorder(url: url, settings: settings), recorder.record() else {
-            throw RecorderError.failed
-        }
-        self.recorder = recorder
+        let started = try await Self.makeRecorder(at: url)
+        self.recorder = started.recorder
         self.fileURL = url
         isRecording = true
         isPaused = false
         duration = 0
         startTimer()
+    }
+
+    /// Готовый рекордер, уже пишущий в файл.
+    ///
+    /// `@unchecked Sendable` здесь честно: объект создаётся в фоне и сразу
+    /// отдаётся на главный поток, после чего в фоне к нему никто не обращается.
+    private struct StartedRecorder: @unchecked Sendable {
+        let recorder: AVAudioRecorder
+    }
+
+    /// Создать рекордер и запустить запись — в фоне.
+    ///
+    /// И создание (поднимается AAC-кодировщик), и `record()` (заводится
+    /// аудиоочередь) занимают вместе сотни миллисекунд. На главном потоке они
+    /// приходились ровно на первые кадры жеста: кнопка уже едет за пальцем, а
+    /// поток занят — отсюда «первые секунды дико лагает, потом нормально».
+    private nonisolated static func makeRecorder(at url: URL) async throws -> StartedRecorder {
+        try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let settings: [String: Any] = [
+                    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                    AVSampleRateKey: 44100,
+                    AVNumberOfChannelsKey: 1,      // голос — моно, вдвое меньше данных
+                    AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
+                ]
+                guard let recorder = try? AVAudioRecorder(url: url, settings: settings),
+                      recorder.record() else {
+                    cont.resume(throwing: RecorderError.failed)
+                    return
+                }
+                cont.resume(returning: StartedRecorder(recorder: recorder))
+            }
+        }
     }
 
     /// Приостановить запись. Файл остаётся тем же — продолжение допишется в него.

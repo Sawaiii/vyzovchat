@@ -86,6 +86,10 @@ struct MicRecordButton: View {
                     phase = .tracking
                     pressing = true
                     lockArmed = false
+                    // Разогреваем движок заранее: отклик на старт записи и на
+                    // замок должен приходить сразу, а не будить движок в тот же
+                    // миг, когда палец уже ведёт кнопку.
+                    Haptics.prepare()
                     onStart()
                 }
                 let dx = max(min(0, value.translation.width), -cancelDistance)
