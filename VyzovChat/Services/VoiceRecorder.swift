@@ -1,4 +1,5 @@
 import AVFoundation
+import QuartzCore
 
 /// Включение и выключение аудиосессии.
 ///
@@ -49,6 +50,23 @@ final class VoiceRecorder: NSObject, ObservableObject {
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var fileURL: URL?
+
+    /// Время старта и накопленная пауза — по ним и считаем длительность.
+    ///
+    /// Спрашивать `recorder.currentTime` двадцать раз в секунду нельзя: это
+    /// обращение к аудиоочереди, и главный поток на нём ждёт, пока очередь
+    /// отпустит поток записи. Каждое ожидание короткое, но приходит двадцать
+    /// раз в секунду и ровно поверх жеста — это и была вязкость, которая не
+    /// проходила и через несколько секунд удержания. Часы для счётчика нам
+    /// нужны обычные, а не «сколько именно записано».
+    private var startedAt: CFTimeInterval = 0
+    private var pausedTotal: CFTimeInterval = 0
+    private var pausedAt: CFTimeInterval?
+
+    private var elapsed: TimeInterval {
+        let now = pausedAt ?? CACurrentMediaTime()
+        return max(0, now - startedAt - pausedTotal)
+    }
 
     /// Максимальная длина: случайно оставленная запись не должна съесть память
     /// и трафик выездника.
@@ -103,6 +121,9 @@ final class VoiceRecorder: NSObject, ObservableObject {
         isRecording = true
         isPaused = false
         duration = 0
+        startedAt = CACurrentMediaTime()
+        pausedTotal = 0
+        pausedAt = nil
         startTimer()
     }
 
@@ -143,12 +164,15 @@ final class VoiceRecorder: NSObject, ObservableObject {
     func pause() {
         guard isRecording, !isPaused, let recorder else { return }
         recorder.pause()
+        pausedAt = CACurrentMediaTime()
         isPaused = true
     }
 
     func resume() {
         guard isRecording, isPaused, let recorder else { return }
         guard recorder.record() else { return }
+        if let pausedAt { pausedTotal += CACurrentMediaTime() - pausedAt }
+        pausedAt = nil
         isPaused = false
     }
 
@@ -191,9 +215,12 @@ final class VoiceRecorder: NSObject, ObservableObject {
         // в секунду — иначе цифры дёргаются через раз. Тикает он в отдельной
         // маленькой вью, так что перерисовка дешёвая.
         let tick = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let recorder = self.recorder else { return }
-                self.duration = recorder.currentTime
+            // Таймер добавлен в главный цикл — значит, мы уже на главном
+            // потоке, и прыгать через задачу незачем: двадцать задач в секунду
+            // и сами по себе работа, и обновление счётчика от них отстаёт.
+            MainActor.assumeIsolated {
+                guard let self, self.recorder != nil else { return }
+                self.duration = self.elapsed
                 if self.duration >= self.maxDuration { self.onLimitReached?() }
             }
         }

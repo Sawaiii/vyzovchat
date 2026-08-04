@@ -3,10 +3,11 @@ import SwiftUI
 /// Кнопка записи голосового: держим — пишем, ведём вверх к замку — фиксируем,
 /// ведём влево — отменяем. После фиксации круг становится отправкой.
 ///
-/// Отдельная вью не ради порядка, а ради плавности: палец двигает круг десятки
-/// раз в секунду, и пока смещение лежало в состоянии чата, каждый кадр жеста
-/// перерисовывал весь экран — ленту, темы, фон. Здесь оно живёт внутри, и на
-/// движение пальца обновляется только сама кнопка.
+/// Разделена на две вьюхи не ради порядка, а ради плавности. Палец двигает круг
+/// десятки раз в секунду, и всё, что лежит с ним в одном теле, пересобирается
+/// на каждом кадре жеста. Поэтому здесь остались только замок и пауза — то, что
+/// от движения пальца не зависит, — а сам круг вынесен ниже вместе со
+/// смещением и жестом.
 struct MicRecordButton: View {
     /// Палец на кнопке. Наружу — чтобы поле ввода успело смениться на счётчик
     /// ещё до того, как запись реально начнётся (старт асинхронный).
@@ -23,25 +24,86 @@ struct MicRecordButton: View {
     let onFinish: () -> Void
     let onTogglePause: () -> Void
 
-    /// Насколько кнопка уехала за пальцем.
-    @State private var drag: CGSize = .zero
     /// Палец дошёл до замка — подсвечиваем цель, чтобы было видно, что дальше
     /// вести не надо.
     @State private var lockArmed = false
+
+    /// Насколько вести палец вверх до фиксации. Ровно до замка: он висит на
+    /// этом же расстоянии, и «дошёл до иконки» должно значить «сработало».
+    static let lockDistance: CGFloat = 64
+
+    var body: some View {
+        RecordCircle(pressing: $pressing,
+                     lockArmed: $lockArmed,
+                     isLocked: isLocked,
+                     onStart: onStart,
+                     onLock: onLock,
+                     onCancel: onCancel,
+                     onFinish: onFinish)
+            // Полоса и замок висят над кнопкой по её месту в лейауте, а не по
+            // тому, куда её увёл палец: смещение круга лежит внутри и наружу не
+            // выходит, поэтому цель остаётся стоять — к ней и ведут.
+            .overlay(alignment: .bottom) { if isActive { floatingPanel } }
+    }
+
+    /// Всплывающая панель над кнопкой: пока держим — замок, к которому ведут
+    /// палец, после фиксации — пауза.
+    ///
+    /// Замок здесь видимая цель, а не догадка: без него фиксация была бы
+    /// «увести палец вверх», и понять, увёл ли достаточно, неоткуда.
+    @ViewBuilder
+    private var floatingPanel: some View {
+        if isLocked {
+            Button(action: onTogglePause) {
+                Image(systemName: isPaused ? "mic.fill" : "pause.fill")
+                    .font(.headline).foregroundStyle(Theme.accent)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.panel2, in: Circle())
+            }
+            .offset(y: -60)
+        } else {
+            VStack(spacing: 6) {
+                Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(lockArmed ? Theme.accent : Theme.textSecondary)
+            .frame(width: 40, height: 72)
+            .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .animation(.easeOut(duration: 0.15), value: lockArmed)
+            .offset(y: -(Self.lockDistance + 12))
+        }
+    }
+}
+
+/// Сам круг: растёт под пальцем, едет за ним и решает, что жест значит.
+///
+/// Всё, что меняется на каждом кадре жеста, живёт здесь и только здесь — тело
+/// этой вьюхи короткое, и пересобирать его дёшево.
+private struct RecordCircle: View {
+    @Binding var pressing: Bool
+    @Binding var lockArmed: Bool
+    let isLocked: Bool
+
+    let onStart: () -> Void
+    let onLock: () -> Void
+    let onCancel: () -> Void
+    let onFinish: () -> Void
+
+    /// Насколько кнопка уехала за пальцем.
+    @State private var drag: CGSize = .zero
     /// Стадия текущего жеста.
     @State private var phase: Phase = .idle
 
     /// Жест живёт дольше, чем запись: после фиксации или отмены палец обычно
     /// ещё едет, и события продолжают сыпаться. Без явной стадии такое событие
     /// выглядело как новое касание — запись стартовала заново, тут же
-    /// отменялась следующим кадром, и так десятки раз за свайп. Каждый круг —
-    /// это включение и выключение аудиосессии на главном потоке, отсюда и
-    /// рывки. `spent` означает «жест своё отработал, ждём отпускания».
+    /// отменялась следующим кадром, и так десятки раз за свайп.
+    /// `spent` означает «жест своё отработал, ждём отпускания».
     private enum Phase { case idle, tracking, spent }
 
-    /// Насколько вести палец вверх до фиксации. Ровно до замка: он висит на
-    /// этом же расстоянии, и «дошёл до иконки» должно значить «сработало».
-    private let lockDistance: CGFloat = 64
+    private var lockDistance: CGFloat { MicRecordButton.lockDistance }
     /// Влево до отмены — заметно дальше, чтобы случайный увод не стирал запись.
     private let cancelDistance: CGFloat = 80
 
@@ -53,26 +115,30 @@ struct MicRecordButton: View {
             .frame(width: 40, height: 40)
             .background(Theme.accent, in: Circle())
             // Растёт под пальцем, как в мессенджерах: видно, что жест поймался.
-            .scaleEffect(pressing ? 1.6 : 1)
+            // Вдвое, а не в полтора: под самим пальцем полуторного круга почти
+            // не видно — палец его и закрывает.
+            .scaleEffect(pressing ? 2 : 1)
             // Ореол рисуется уже поверх выросшего круга: попади он раньше
             // масштаба, тот бы на него умножился и залил пол-экрана.
-            .background {
-                if pressing {
-                    ZStack {
-                        Circle().fill(Theme.accent.opacity(0.10)).scaleEffect(2.6)
-                        Circle().fill(Theme.accent.opacity(0.16)).scaleEffect(1.95)
-                    }
-                }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: pressing)
+            .background { ripple }
+            .animation(.spring(response: 0.3, dampingFraction: 0.72), value: pressing)
             .contentShape(Rectangle())
             // Круг едет за пальцем к замку. Смещение не меняет место в лейауте,
             // поэтому сам замок остаётся стоять — к нему и ведут.
             .offset(drag)
             .gesture(dragGesture)
-            .overlay(alignment: .bottom) {
-                if isActive { floatingPanel }
-            }
+    }
+
+    /// Ореол вокруг кнопки. Всегда в дереве: меняются только размер и
+    /// прозрачность. Раньше он появлялся и исчезал как отдельная ветка, и
+    /// SwiftUI пересобирал её переход на каждом кадре жеста — рост кнопки от
+    /// этого шёл рывками.
+    private var ripple: some View {
+        ZStack {
+            Circle().fill(Theme.accent.opacity(0.10)).scaleEffect(pressing ? 3.2 : 1)
+            Circle().fill(Theme.accent.opacity(0.16)).scaleEffect(pressing ? 2.5 : 1)
+        }
+        .opacity(pressing ? 1 : 0)
     }
 
     private var dragGesture: some Gesture {
@@ -85,15 +151,13 @@ struct MicRecordButton: View {
                 if phase == .idle {
                     phase = .tracking
                     pressing = true
-                    lockArmed = false
+                    if lockArmed { lockArmed = false }
                     // Разогреваем движок заранее: отклик на старт записи и на
                     // замок должен приходить сразу, а не будить движок в тот же
                     // миг, когда палец уже ведёт кнопку.
                     Haptics.prepare()
                     onStart()
                 }
-                let dx = max(min(0, value.translation.width), -cancelDistance)
-                let dy = max(min(0, value.translation.height), -70)
                 // Вверх до замка — фиксируем, влево — отменяем. Считаем по
                 // сырому смещению: обрезанное упирается в порог и на резком
                 // свайпе никогда его не переходит. Резкий свайп ещё и приходит
@@ -110,8 +174,12 @@ struct MicRecordButton: View {
                         onCancel()
                     }
                 } else {
-                    drag = CGSize(width: dx, height: dy)
-                    lockArmed = dy < -25
+                    drag = CGSize(width: max(min(0, value.translation.width), -cancelDistance),
+                                  height: max(min(0, value.translation.height), -70))
+                    // Пишем, только когда действительно поменялось: каждая
+                    // запись сюда перерисовывает замок этажом выше.
+                    let armed = value.translation.height < -25
+                    if armed != lockArmed { lockArmed = armed }
                 }
             }
             .onEnded { value in
@@ -144,37 +212,7 @@ struct MicRecordButton: View {
     /// назад без анимации читается как сбой.
     private func release() {
         pressing = false
-        lockArmed = false
+        if lockArmed { lockArmed = false }
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { drag = .zero }
-    }
-
-    /// Всплывающая панель над кнопкой: пока держим — замок, к которому ведут
-    /// палец, после фиксации — пауза.
-    ///
-    /// Замок здесь видимая цель, а не догадка: без него фиксация была бы
-    /// «увести палец вверх», и понять, увёл ли достаточно, неоткуда.
-    @ViewBuilder
-    private var floatingPanel: some View {
-        if isLocked {
-            Button(action: onTogglePause) {
-                Image(systemName: isPaused ? "mic.fill" : "pause.fill")
-                    .font(.headline).foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.panel2, in: Circle())
-            }
-            .offset(y: -52)
-        } else {
-            VStack(spacing: 6) {
-                Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(lockArmed ? Theme.accent : Theme.textSecondary)
-            .frame(width: 40, height: 72)
-            .background(Theme.panel2, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .animation(.easeOut(duration: 0.15), value: lockArmed)
-            .offset(y: -lockDistance)
-        }
     }
 }
