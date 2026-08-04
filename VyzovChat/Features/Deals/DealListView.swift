@@ -58,6 +58,8 @@ struct DealListView: View {
                 }
             }
             .navigationTitle("Заказы")
+            // Внутри стека: полоса уезжает вместе с экраном при переходе.
+            .appTabBar()
             .toolbar {
                 if session.currentUser?.isAdmin == true {
                     ToolbarItem(placement: .topBarTrailing) {

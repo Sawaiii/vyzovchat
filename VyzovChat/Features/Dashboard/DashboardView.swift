@@ -48,6 +48,8 @@ struct DashboardView: View {
                 }
             }
             .navigationTitle(mode == .reports ? "Отчёты" : "Смены")
+            // Внутри стека: полоса уезжает вместе с экраном при переходе.
+            .appTabBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {

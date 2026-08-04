@@ -8,6 +8,10 @@ final class Router: ObservableObject {
     @Published var pendingChatId: String?
     /// Запрос переключиться на вкладку «Чаты».
     @Published var wantsChatsTab = false
+    /// Открытая вкладка. Живёт здесь, а не в `MainTabView`: полосу вкладок
+    /// рисует каждый корневой экран у себя (см. `AppTabBar`), и общее место
+    /// проще, чем протаскивать привязку через все экраны.
+    @Published var tab: AppTab = .chats
 
     private init() {}
 

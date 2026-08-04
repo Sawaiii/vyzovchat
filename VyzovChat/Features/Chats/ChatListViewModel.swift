@@ -74,24 +74,17 @@ final class ChatListViewModel: ObservableObject {
         let isMine = message.senderId == RealtimeService.shared.currentUserId
         let isOpen = RealtimeService.shared.activeChatId == message.chatId
 
-        func update(_ list: inout [Chat], dm: Bool) -> Bool {
+        func update(_ list: inout [Chat]) -> Bool {
             guard let i = list.firstIndex(where: { $0.id == message.chatId }) else { return false }
-            list[i].lastMessagePreview = dm ? Self.dmPreview(message.previewText, isMine: isMine)
-                                            : message.previewText
+            list[i].lastMessagePreview = message.previewText
             list[i].lastMessageDate = message.sentAt
+            list[i].lastMessageIsMine = isMine
             if !isMine && !isOpen { list[i].unreadCount += 1 }
             list.sort(by: Chat.byActivity)
             return true
         }
 
-        if !update(&eventChats, dm: false) { _ = update(&dmChats, dm: true) }
-    }
-
-    /// «Вы: » перед своим сообщением. В переписке на двоих иначе не понять,
-    /// ждёт ли собеседник ответа или последнее слово осталось за тобой, — а
-    /// имени отправителя, как в общем чате, тут нет.
-    static func dmPreview(_ text: String, isMine: Bool) -> String {
-        isMine ? "Вы: \(text)" : text
+        if !update(&eventChats) { _ = update(&dmChats) }
     }
 
     /// Переносим уже загруженные превью в свежий список, чтобы при обновлении
@@ -111,12 +104,14 @@ final class ChatListViewModel: ObservableObject {
                 if updated.lastMessagePreview == nil, prev.lastMessagePreview != nil {
                     updated.lastMessagePreview = prev.lastMessagePreview
                     updated.lastMessageDate = prev.lastMessageDate
+                    updated.lastMessageIsMine = prev.lastMessageIsMine
                 } else if updated.lastMessagePreview == prev.lastMessagePreview {
                     // Личной переписке сервер отдаёт текст последнего сообщения,
-                    // но не его время. Уже узнанное время переносим — но только
-                    // пока текст тот же: сменился текст, значит сменилось и
-                    // сообщение, и время надо спрашивать заново.
+                    // но не его время и не его отправителя. Уже узнанное
+                    // переносим — но только пока текст тот же: сменился текст,
+                    // значит сменилось и сообщение, и спрашивать надо заново.
                     updated.lastMessageDate = prev.lastMessageDate
+                    updated.lastMessageIsMine = prev.lastMessageIsMine
                 }
             }
             return updated
@@ -189,10 +184,11 @@ final class ChatListViewModel: ObservableObject {
         if let i = eventChats.firstIndex(where: { $0.id == chatId }) {
             eventChats[i].lastMessagePreview = message.previewText
             eventChats[i].lastMessageDate = message.sentAt
+            eventChats[i].lastMessageIsMine = message.senderId == myId
         } else if let i = dmChats.firstIndex(where: { $0.id == chatId }) {
-            dmChats[i].lastMessagePreview =
-                Self.dmPreview(message.previewText, isMine: message.senderId == myId)
+            dmChats[i].lastMessagePreview = message.previewText
             dmChats[i].lastMessageDate = message.sentAt
+            dmChats[i].lastMessageIsMine = message.senderId == myId
         }
     }
 

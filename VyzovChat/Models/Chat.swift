@@ -15,6 +15,11 @@ struct Chat: Identifiable, Codable, Equatable, Hashable {
     var participantIds: [String]
     var lastMessagePreview: String?
     var lastMessageDate: Date?
+    /// Последнее сообщение — моё. Отдельным признаком, а не пометкой прямо в
+    /// тексте превью: по тексту список сверяет, то же это сообщение или новое,
+    /// и дописанное «Вы: » ломало сверку — строка каждый раз выглядела чужой,
+    /// дата сбрасывалась и запрашивалась заново.
+    var lastMessageIsMine: Bool = false
     var unreadCount: Int
     var isPhotoReportOpen: Bool
 

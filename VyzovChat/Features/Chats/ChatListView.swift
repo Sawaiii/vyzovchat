@@ -51,6 +51,9 @@ struct ChatListView: View {
                 .padding(.top, Spacing.s)
             }
             .navigationTitle("Чаты")
+            // Внутри стека, а не снаружи: полоса вкладок должна уезжать вместе
+            // с этим экраном, когда поверх него открывают чат.
+            .appTabBar()
             .searchable(text: $query, prompt: "Поиск по названию")
             .navigationDestination(item: $openChat) { chat in
                 ChatView(chat: chat, currentUserId: session.currentUser?.id ?? "")
@@ -247,7 +250,9 @@ struct ChatRow: View {
                 }
 
                 HStack {
-                    Text(chat.lastMessagePreview?.isEmpty == false ? chat.lastMessagePreview! : "Нет сообщений")
+                    // «Вы: » рисуем здесь, а не подмешиваем в текст: по тексту
+                    // список сверяет, то же это сообщение или новое.
+                    Text(preview)
                         .font(Typography.subheadline).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     Spacer()
                     // Упоминание и ответ — отдельными значками: их ждут адресно
@@ -280,6 +285,14 @@ struct ChatRow: View {
                       systemImage: muted ? "bell.fill" : "bell.slash.fill")
             }
         }
+    }
+
+    /// Текст последнего сообщения. В личной переписке своё помечаем «Вы: » —
+    /// иначе на двоих не понять, ждёт ли собеседник ответа или последнее слово
+    /// осталось за тобой. В общем чате отправитель и так виден по превью.
+    private var preview: String {
+        guard let text = chat.lastMessagePreview, !text.isEmpty else { return "Нет сообщений" }
+        return chat.isDirect && chat.lastMessageIsMine ? "Вы: \(text)" : text
     }
 
     private var avatar: some View {

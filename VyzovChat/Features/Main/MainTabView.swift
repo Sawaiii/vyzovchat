@@ -3,41 +3,26 @@ import SwiftUI
 struct MainTabView: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject private var router = Router.shared
-    @State private var tab: Tab = .chats
 
-    enum Tab { case chats, deals, dashboard, disk, profile }
-
-    /// Дашборд серверный и целиком админский: обычному сотруднику его эндпоинты
-    /// отвечают «admin_only», поэтому и вкладку ему не показываем.
     private var showsDashboard: Bool { session.currentUser?.isAdmin ?? false }
 
+    /// `TabView` остаётся ради того, ради чего он и нужен: он держит все вкладки
+    /// живыми, и возврат на вкладку не перезагружает её с нуля. А вот полосу он
+    /// больше не рисует — её рисует каждый корневой экран у себя, чтобы она
+    /// уезжала в переход вместе с ним. Подробности в `AppTabBar`.
     var body: some View {
-        TabView(selection: $tab) {
-            ChatListView()
-                .tabItem { Label("Чаты", systemImage: "bubble.left.and.bubble.right.fill") }
-                .tag(Tab.chats)
-
-            DealListView()
-                .tabItem { Label("Заказы", systemImage: "briefcase.fill") }
-                .tag(Tab.deals)
-
+        TabView(selection: $router.tab) {
+            ChatListView().tag(AppTab.chats)
+            DealListView().tag(AppTab.deals)
             if showsDashboard {
-                DashboardView()
-                    .tabItem { Label("Отчёты", systemImage: "chart.bar.doc.horizontal.fill") }
-                    .tag(Tab.dashboard)
+                DashboardView().tag(AppTab.dashboard)
             }
-
-            DiskView()
-                .tabItem { Label("Диск", systemImage: "externaldrive.fill") }
-                .tag(Tab.disk)
-
-            ProfileView()
-                .tabItem { Label("Профиль", systemImage: "person.crop.circle.fill") }
-                .tag(Tab.profile)
+            DiskView().tag(AppTab.disk)
+            ProfileView().tag(AppTab.profile)
         }
         .tint(Theme.accent)
         .onChange(of: router.wantsChatsTab) {
-            if router.wantsChatsTab { tab = .chats; router.wantsChatsTab = false }
+            if router.wantsChatsTab { router.tab = .chats; router.wantsChatsTab = false }
         }
     }
 }

@@ -28,6 +28,8 @@ struct ProfileView: View {
                 }
             }
             .navigationTitle("Профиль")
+            // Внутри стека: полоса уезжает вместе с экраном при переходе.
+            .appTabBar()
         }
     }
 
