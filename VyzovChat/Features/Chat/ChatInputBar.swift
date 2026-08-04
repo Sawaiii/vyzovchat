@@ -113,7 +113,11 @@ struct ChatInputBar: View {
             recorder: model.recorder,
             onStart: { start() },
             onLock: {
-                isLocked = true
+                // С анимацией: круг на фиксации не возвращается к прежнему
+                // размеру, а дорастает до кнопки отправки и отъезжает от края.
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    isLocked = true
+                }
                 // Громкость меряем только теперь: палец с экрана снят, мешать
                 // замер больше нечему, а волну как раз видно.
                 model.recorder.setMetering(true)
@@ -151,8 +155,11 @@ struct ChatInputBar: View {
     }
 
     private func resetRecordingUI() {
-        isRecording = false
-        isLocked = false
+        // С анимацией: выросший круг иначе схлопывался бы к микрофону рывком.
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+            isRecording = false
+            isLocked = false
+        }
         isPaused = false
     }
 }

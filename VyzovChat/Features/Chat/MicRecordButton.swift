@@ -36,6 +36,19 @@ struct MicRecordButton: View {
     /// замка» и значит «сработало». Меняешь одно — проверь второе.
     static let lockDistance: CGFloat = 64
 
+    /// Насколько круг вырастает под пальцем и насколько — у зафиксированной
+    /// записи. Зафиксированная крупнее: палец с неё убран, ничего её не
+    /// закрывает, и она теперь главное на экране — это кнопка отправки.
+    static let pressedScale: CGFloat = 2
+    static let lockedScale: CGFloat = 2.5
+
+    /// Выросший круг не помещается в свой угол: половина ушла бы за правый край
+    /// экрана и под строку ввода. Сдвигаем его целиком — вместе с волной и
+    /// паузой, потому и живёт сдвиг здесь, а не внутри круга.
+    private var lockedShift: CGSize {
+        isLocked ? CGSize(width: -28, height: -16) : .zero
+    }
+
     var body: some View {
         RecordCircle(pressing: $pressing,
                      lockArmed: $lockArmed,
@@ -52,6 +65,9 @@ struct MicRecordButton: View {
             // тому, куда её увёл палец: смещение круга лежит внутри и наружу не
             // выходит, поэтому цель остаётся стоять — к ней и ведут.
             .overlay(alignment: .bottom) { if isActive { floatingPanel } }
+            // Сдвиг — последним, уже поверх всего: он про положение выросшего
+            // круга целиком, вместе с волной и паузой над ним.
+            .offset(lockedShift)
     }
 
     /// Всплывающая панель над кнопкой: пока держим — замок, к которому ведут
@@ -68,7 +84,9 @@ struct MicRecordButton: View {
                     .frame(width: 44, height: 44)
                     .background(Theme.panel2, in: Circle())
             }
-            .offset(y: -60)
+            // Выше, чем замок: под ней теперь выросший до отправки круг, и с
+            // прежней высоты она легла бы прямо на него.
+            .offset(y: -84)
         } else {
             VStack(spacing: 6) {
                 Image(systemName: lockArmed ? "lock.fill" : "lock.open.fill")
@@ -223,8 +241,8 @@ private struct VoiceLevelWave: View {
 
     var body: some View {
         ZStack {
-            ring(opacity: 0.16, spread: 1.1)
-            ring(opacity: 0.10, spread: 1.9)
+            ring(opacity: 0.16, spread: 0.6)
+            ring(opacity: 0.10, spread: 1.1)
         }
         .frame(width: 40, height: 40)
         // Между замерами (двадцать в секунду) волна доезжает сама, иначе она
@@ -233,12 +251,12 @@ private struct VoiceLevelWave: View {
         .allowsHitTesting(false)
     }
 
-    /// Кольцо тем шире, чем громче. Единица в основании — чтобы в тишине оно
-    /// совпадало с кнопкой и не выглядывало из-под неё ободком.
+    /// Кольцо тем шире, чем громче. В основании — размер самой кнопки, чтобы в
+    /// тишине оно совпадало с ней и не выглядывало ободком.
     private func ring(opacity: Double, spread: Double) -> some View {
         Circle()
             .fill(Theme.accent.opacity(opacity))
-            .scaleEffect(1 + spread * recorder.level)
+            .scaleEffect(MicRecordButton.lockedScale + spread * recorder.level)
     }
 }
 
@@ -257,11 +275,18 @@ private struct RecordCircleFace: View, Equatable {
             .background(Theme.accent, in: Circle())
             // Растёт под пальцем, как в мессенджерах: видно, что жест поймался.
             // Вдвое, а не в полтора: под самим пальцем полуторного круга почти
-            // не видно — палец его и закрывает.
-            .scaleEffect(pressing ? 2 : 1)
+            // не видно — палец его и закрывает. А после фиксации круг не
+            // сдувается обратно, а становится ещё крупнее: запись продолжается,
+            // и отправка — теперь главное действие на экране.
+            .scaleEffect(scale)
             // Ореол рисуется уже поверх выросшего круга: попади он раньше
             // масштаба, тот бы на него умножился и залил пол-экрана.
             .background { ripple }
+    }
+
+    private var scale: CGFloat {
+        if pressing { return MicRecordButton.pressedScale }
+        return isLocked ? MicRecordButton.lockedScale : 1
     }
 
     /// Ореол вокруг кнопки. Всегда в дереве: меняются только размер и
