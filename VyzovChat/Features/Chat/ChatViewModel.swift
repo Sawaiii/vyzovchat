@@ -1408,6 +1408,18 @@ final class ChatViewModel: ObservableObject {
     /// Куда проматывать ленту с подсветкой (переход из поиска или из цитаты).
     @Published var jumpToMessageId: String?
 
+    /// Строка ленты, на которой на самом деле лежит это сообщение.
+    ///
+    /// Обычно это оно само. Но альбом склеен в ленте в одно сообщение — первое
+    /// из отправленных разом, — и у остальных фотографий своей строки нет.
+    /// Прокрутка к такому id молча не срабатывала: искать в ленте нечего.
+    func feedAnchorId(for messageId: String) -> String? {
+        if activeFeed.contains(where: { $0.id == messageId }) { return messageId }
+        guard let message = messages.first(where: { $0.id == messageId }),
+              let album = message.albumId else { return nil }
+        return messages.first { $0.albumId == album }?.id
+    }
+
     /// Лента под этим переходом только что заменилась целиком — окном вокруг
     /// сообщения. Прокручивать сразу бесполезно: ячейки с нужным id в ленивом
     /// списке ещё нет, прокрутка молча ничего не делает, и остаёшься где-то

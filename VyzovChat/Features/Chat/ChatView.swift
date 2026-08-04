@@ -10,6 +10,10 @@ struct ChatView: View {
     @State private var showMembers = false
     @State private var showEditEvent = false
     @State private var showShifts = false
+    /// Открыта строка поиска. Поиск в чате — дело редкое, и держать под шапкой
+    /// постоянную строку ради него незачем.
+    @State private var showSearch = false
+    @FocusState private var searchFocused: Bool
     @State private var showEventInfo = false
     @State private var showGallery = false
     @State private var showCreateTopic = false
@@ -108,6 +112,7 @@ struct ChatView: View {
         ZStack {
             chatBackground
             VStack(spacing: 0) {
+                if showSearch { searchBar }
                 if !model.chat.isDirect {
                     // Шапка — один блок с общим фоном и общим шагом по
                     // вертикали: раньше каждая полоса несла свои отступы, и они
@@ -191,8 +196,9 @@ struct ChatView: View {
         // открытого списка. Сгладить это средствами SwiftUI не выходит —
         // объявленная на списке видимость распространяется на весь стек и
         // отменяет скрытие вовсе. Пусть лучше стоит на месте.
-        .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .automatic),
-                    prompt: "Поиск в чате")
+        // Штатного `searchable` здесь нет намеренно: он держит под шапкой целую
+        // строку всегда, а ищут в чате изредка. Поиск открывается кнопкой и
+        // занимает место, только пока им пользуются.
         .toolbar {
             if model.chat.isDirect {
                 ToolbarItem(placement: .principal) {
@@ -206,6 +212,15 @@ struct ChatView: View {
             // выездник должен в одно касание, а не вспоминать, что это спрятано
             // за многоточием. Остальное меню держим одним пунктом (см. ниже),
             // так что кнопок в тулбаре по-прежнему две и переполнение не грозит.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.smooth(duration: 0.2)) { showSearch = true }
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .accessibilityLabel("Поиск в чате")
+            }
             if !model.chat.isDirect {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showShifts = true } label: {
@@ -538,19 +553,19 @@ struct ChatView: View {
                 .onChange(of: scrollTarget) {
                     guard isActive, let target = scrollTarget else { return }
                     scrollTarget = nil
-                    highlightedId = target
-                    if model.jumpNeedsSettle {
-                        // Лента только что подменилась окном вокруг сообщения:
-                        // едем сразу, без анимации, и повторяем, пока список
-                        // достраивается — первая попытка приходится на кадр,
-                        // где нужной ячейки ещё нет.
-                        model.jumpNeedsSettle = false
-                        settleCentered(proxy, to: target)
-                    } else {
-                        withAnimation(.smooth) { proxy.scrollTo(target, anchor: .center) }
-                    }
+                    model.jumpNeedsSettle = false
+                    // Вести надо к строке ленты, а не к сообщению: у фотографии
+                    // из альбома своей строки нет, альбом склеен в одну.
+                    let anchor = model.feedAnchorId(for: target) ?? target
+                    highlightedId = anchor
+                    // Всегда доводкой, даже когда сообщение уже загружено.
+                    // Одна плавная прокрутка к далёкой строке не доезжает:
+                    // в ленивом списке она целится по прикидке высот, а
+                    // построенные по дороге строки эту прикидку меняют — и
+                    // прокрутка останавливалась где придётся.
+                    settleCentered(proxy, to: anchor)
                     Task {
-                        try? await Task.sleep(for: .milliseconds(1300))
+                        try? await Task.sleep(for: .milliseconds(1800))
                         withAnimation { highlightedId = nil }
                     }
                 }
@@ -1193,6 +1208,32 @@ struct ChatView: View {
             }
         }
         .padding(.horizontal, Spacing.s).padding(.vertical, 6)
+        .background(Theme.panel)
+    }
+
+    /// Строка поиска — открывается кнопкой в шапке и закрывается вместе с
+    /// запросом: оставить её пустой, но открытой, значит оставить ленту в
+    /// режиме поиска, где сообщения не пузыри, а ссылки.
+    private var searchBar: some View {
+        HStack(spacing: Spacing.s) {
+            Image(systemName: "magnifyingglass")
+                .font(.footnote).foregroundStyle(Theme.textSecondary)
+            TextField("Поиск в чате", text: $model.search)
+                .focused($searchFocused)
+                .submitLabel(.search)
+            if !model.search.isEmpty {
+                Button { model.search = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
+                }
+            }
+            Button("Отмена") {
+                model.search = ""
+                searchFocused = false
+                withAnimation(.smooth(duration: 0.2)) { showSearch = false }
+            }
+            .font(Typography.callout).foregroundStyle(Theme.accent)
+        }
+        .padding(.horizontal, Spacing.m).padding(.vertical, Spacing.xs)
         .background(Theme.panel)
     }
 

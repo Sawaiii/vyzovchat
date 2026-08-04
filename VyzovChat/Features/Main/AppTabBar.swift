@@ -48,30 +48,36 @@ struct AppTabBar: View {
         return all.filter { $0 != .dashboard }
     }
 
+    /// Высота задана жёстко. Без неё полоса меряется по содержимому, и на
+    /// переключении вкладок её мерили заново для каждой страницы — от этого она
+    /// и дёргалась на пиксель туда-обратно.
+    static let height: CGFloat = 50
+
     var body: some View {
         HStack(spacing: 0) {
             ForEach(tabs, id: \.self) { tab in
                 Button {
                     guard router.tab != tab else { return }
                     router.tab = tab
-                    Haptics.selection()
+                    // Отклика здесь нет намеренно: у системных вкладок его тоже
+                    // нет, а завод движка приходится ровно на смену страницы.
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon).font(.system(size: 20))
                         Text(tab.title).font(.system(size: 10, weight: .medium))
                     }
                     .foregroundStyle(router.tab == tab ? Theme.accent : Theme.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.bottom, 2)
+        .frame(height: Self.height)
         .background {
             // Непрозрачная подложка с тонкой линией сверху: полоса лежит над
             // содержимым экрана, и просвечивать сквозь неё оно не должно.
+            // Подложка уходит под нижний край экрана, сами кнопки — нет.
             Theme.panel
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
@@ -88,13 +94,18 @@ extension View {
     /// иначе полоса окажется снаружи и останется висеть поверх открытого чата —
     /// ровно как системная, от которой мы и уходим.
     ///
-    /// Через `safeAreaInset`, а не наложением: так экран знает про её высоту и
-    /// последняя строка списка не прячется под ней.
+    /// Обычным стеком, а не `safeAreaInset`. Вставка в безопасную область
+    /// считается отдельным проходом раскладки и пересчитывается для каждой
+    /// страницы при переключении вкладок — от этого полоса и подрагивала.
+    /// В стеке место под неё известно сразу, одним проходом.
     func appTabBar() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { AppTabBar() }
-            // Системную полосу гасим здесь же. Объявленная внутри стека
-            // видимость действует на весь стек — ровно то, что нужно: системной
-            // полосы не должно быть нигде, ни в списке, ни в открытом чате.
-            .toolbar(.hidden, for: .tabBar)
+        VStack(spacing: 0) {
+            self
+            AppTabBar()
+        }
+        // Системную полосу гасим здесь же. Объявленная внутри стека видимость
+        // действует на весь стек — ровно то, что нужно: системной полосы не
+        // должно быть нигде, ни в списке, ни в открытом из него чате.
+        .toolbar(.hidden, for: .tabBar)
     }
 }
