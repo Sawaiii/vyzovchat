@@ -32,9 +32,6 @@ struct ChatView: View {
     @State private var menuPop = false
     @State private var isAtBottom = true
     @State private var showScrollDown = false
-    /// Палец сейчас на микрофоне. Отдельно от «идёт запись»: запись стартует
-    /// асинхронно, а кнопка должна реагировать сразу.
-    @State private var isPressingMic = false
     /// Открытый чеклист оборудования: погрузка или приёмка.
     @State private var checklistKind: EquipCheckKind?
     /// Темы, чью ленту уже довели до конца при первом показе. Повторно не
@@ -168,7 +165,12 @@ struct ChatView: View {
                 if !model.mentionSuggestions.isEmpty { mentionBar }
                 if let editing = model.editingMessage { editBar(editing) }
                 else if let reply = model.replyingTo { replyBar(reply) }
-                inputBar
+                // Строка ввода — отдельная вью: состояние записи меняется
+                // несколько раз за секунду жеста, и держи мы его здесь, каждое
+                // изменение перерисовывало бы шапку, темы и все ленты разом.
+                ChatInputBar(model: model,
+                             showPhotoPicker: $showPhotoPicker,
+                             showFileImporter: $showFileImporter)
             }
             // Размытия чата здесь больше нет. `.blur` — фильтр слоя, и он
             // работает всегда, а не только когда радиус больше нуля: весь чат
@@ -1216,99 +1218,6 @@ struct ChatView: View {
             }
         }
         .background(Theme.panel2)
-    }
-
-    /// Идёт запись или её вот-вот начнут — поле ввода уступает место счётчику.
-    /// Палец учитываем отдельно: запись стартует асинхронно, а строка должна
-    /// смениться в тот же миг, когда её коснулись.
-    private var isRecordingUI: Bool { isPressingMic || model.isRecording }
-
-    private var inputBar: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if isRecordingUI {
-                    // Счётчик тикает двадцать раз в секунду. Он живёт в отдельной
-                    // вью со своим наблюдением за рекордером — иначе
-                    // перерисовывался бы весь чат на каждый тик.
-                    RecordingBar(recorder: model.recorder,
-                                 isLocked: model.isRecordingLocked,
-                                 onCancel: { Task { await model.cancelRecording() } })
-                } else {
-                    textInputBar
-                }
-            }
-            .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
-            .background(Theme.panel)
-
-            // Правая кнопка нарисована поверх строки, а не внутри неё: во время
-            // записи она вырастает в круг с ореолом и вылезает за её пределы, а
-            // над ней всплывает замок. И, что важнее, она одна на все состояния —
-            // убери её из дерева при смене ветки, и посреди удержания оборвался
-            // бы жест, а вместе с ним и запись.
-            trailingControl
-                .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)
-        }
-    }
-
-    /// Что справа от поля: отправка текста, микрофон или — у зафиксированной
-    /// записи — отправка голосового.
-    @ViewBuilder
-    private var trailingControl: some View {
-        if hasDraft && !isRecordingUI {
-            Button { Task { await model.send() } } label: {
-                Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
-                    .frame(width: 40, height: 40).background(Theme.accent, in: Circle())
-            }
-        } else {
-            micButton
-        }
-    }
-
-    private var hasDraft: Bool { !model.draft.trimmingCharacters(in: .whitespaces).isEmpty }
-
-    /// Запись голосового удержанием, как в мессенджерах: держим — пишем,
-    /// ведём вверх — фиксируем и можно отпустить, ведём влево — отменяем.
-    ///
-    /// После фиксации палец не нужен: круг становится отправкой, над ним
-    /// появляется пауза, а отмена — обычной кнопкой в строке. На площадке в
-    /// перчатках жест срывается, и без этого запасного пути записанное
-    /// терялось бы.
-    ///
-    /// Сама кнопка — отдельная вью: палец двигает её десятки раз в секунду, и
-    /// держи мы смещение здесь, каждый кадр жеста перерисовывал бы весь чат.
-    private var micButton: some View {
-        MicRecordButton(
-            pressing: $isPressingMic,
-            isLocked: model.isRecordingLocked,
-            isActive: isRecordingUI,
-            isPaused: model.isRecordingPaused,
-            onStart: { Task { await model.startRecording() } },
-            onLock: { model.isRecordingLocked = true },
-            onCancel: { Task { await model.cancelRecording() } },
-            // Ждём внутри модели: короткое нажатие могло отпуститься раньше,
-            // чем запись успела начаться.
-            onFinish: { Task { await model.finishRecording() } },
-            onTogglePause: { model.togglePause() })
-    }
-
-    private var textInputBar: some View {
-        HStack(spacing: Spacing.s) {
-            Menu {
-                Button { showPhotoPicker = true } label: { Label("Фото и видео", systemImage: "photo.on.rectangle") }
-                Button { showFileImporter = true } label: { Label("Файл", systemImage: "doc") }
-            } label: {
-                Image(systemName: "paperclip").font(.title3).foregroundStyle(Theme.accent)
-                    .frame(width: 40, height: 40)
-            }
-
-            TextField("Сообщение", text: $model.draft, axis: .vertical)
-                .lineLimit(1...4)
-                .padding(.horizontal, Spacing.m).padding(.vertical, 10)
-                .background(Theme.panel2, in: Capsule())
-
-            // Место под правую кнопку: сама она нарисована поверх строки.
-            Color.clear.frame(width: 40, height: 40)
-        }
     }
 
 }

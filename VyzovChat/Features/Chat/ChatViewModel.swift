@@ -131,10 +131,8 @@ final class ChatViewModel: ObservableObject {
         self.service = service
         self.currentUserId = currentUserId
         subscribeToRealtime()
-        // Дошли до предела длины — отправляем записанное, а не бросаем.
-        recorder.onLimitReached = { [weak self] in
-            Task { @MainActor in await self?.finishRecording() }
-        }
+        // Предел длины записи ловит строка ввода: ей нужно ещё и вернуть себе
+        // обычный вид, а модель про её состояние ничего не знает.
     }
 
     /// Пересобрать ленту активной темы. Вызывается синхронно из didSet свойств
@@ -1192,15 +1190,22 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Голосовые сообщения
 
     let recorder = VoiceRecorder()
+
+    // Ниже — состояние записи БЕЗ @Published, намеренно.
+    //
+    // Экран чата подписан на модель целиком, и любая публикация перерисовывает
+    // его весь: шапку, этапы, полосу тем и пейджер со всеми лентами. За первую
+    // секунду жеста записи такое случалось несколько раз — касание, старт,
+    // замок, — и жест в это время шёл рывками. Показывает запись теперь строка
+    // ввода, у неё для этого своё состояние; модель только пишет звук.
+
     /// Идёт запись. Отдельно от `recorder.isRecording`: по этому флагу
-    /// переключается поле ввода, и он не должен тикать вместе со счётчиком.
-    @Published private(set) var isRecording = false
+    /// строка ввода переключается на счётчик.
+    private(set) var isRecording = false
     /// Запись зафиксирована — палец можно отпустить, она продолжается.
-    @Published var isRecordingLocked = false
-    /// Повтор `recorder.isPaused` для чата: сам рекордер чат не слушает
-    /// (иначе перерисовывался бы на каждый тик счётчика), а иконку паузы
-    /// переключать надо.
-    @Published private(set) var isRecordingPaused = false
+    var isRecordingLocked = false
+    /// Повтор `recorder.isPaused`: сам рекордер строка не слушает целиком.
+    private(set) var isRecordingPaused = false
 
     /// Запуск записи. Держим задачу, чтобы отпускание пальца дождалось её:
     /// разрешение на микрофон и запуск сессии занимают время, и при коротком
