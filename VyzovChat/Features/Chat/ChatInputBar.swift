@@ -110,8 +110,14 @@ struct ChatInputBar: View {
             isLocked: isLocked,
             isActive: isRecordingUI,
             isPaused: isPaused,
+            recorder: model.recorder,
             onStart: { start() },
-            onLock: { isLocked = true },
+            onLock: {
+                isLocked = true
+                // Громкость меряем только теперь: палец с экрана снят, мешать
+                // замер больше нечему, а волну как раз видно.
+                model.recorder.setMetering(true)
+            },
             onCancel: { cancel() },
             onFinish: { finish() },
             onTogglePause: {

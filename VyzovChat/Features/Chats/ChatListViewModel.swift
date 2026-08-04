@@ -74,16 +74,24 @@ final class ChatListViewModel: ObservableObject {
         let isMine = message.senderId == RealtimeService.shared.currentUserId
         let isOpen = RealtimeService.shared.activeChatId == message.chatId
 
-        func update(_ list: inout [Chat]) -> Bool {
+        func update(_ list: inout [Chat], dm: Bool) -> Bool {
             guard let i = list.firstIndex(where: { $0.id == message.chatId }) else { return false }
-            list[i].lastMessagePreview = message.previewText
+            list[i].lastMessagePreview = dm ? Self.dmPreview(message.previewText, isMine: isMine)
+                                            : message.previewText
             list[i].lastMessageDate = message.sentAt
             if !isMine && !isOpen { list[i].unreadCount += 1 }
             list.sort(by: Chat.byActivity)
             return true
         }
 
-        if !update(&eventChats) { _ = update(&dmChats) }
+        if !update(&eventChats, dm: false) { _ = update(&dmChats, dm: true) }
+    }
+
+    /// «Вы: » перед своим сообщением. В переписке на двоих иначе не понять,
+    /// ждёт ли собеседник ответа или последнее слово осталось за тобой, — а
+    /// имени отправителя, как в общем чате, тут нет.
+    static func dmPreview(_ text: String, isMine: Bool) -> String {
+        isMine ? "Вы: \(text)" : text
     }
 
     /// Переносим уже загруженные превью в свежий список, чтобы при обновлении
@@ -99,9 +107,17 @@ final class ChatListViewModel: ObservableObject {
             // Быстрая фаза последнего сообщения не знает: у мероприятия его дата
             // приходит только вторым шагом. Уже загруженное превью и дату переносим,
             // иначе список пересортировался бы и «прыгнул» туда-обратно.
-            if let prev = previous[chat.id], prev.lastMessagePreview != nil {
-                updated.lastMessagePreview = prev.lastMessagePreview
-                updated.lastMessageDate = prev.lastMessageDate
+            if let prev = previous[chat.id] {
+                if updated.lastMessagePreview == nil, prev.lastMessagePreview != nil {
+                    updated.lastMessagePreview = prev.lastMessagePreview
+                    updated.lastMessageDate = prev.lastMessageDate
+                } else if updated.lastMessagePreview == prev.lastMessagePreview {
+                    // Личной переписке сервер отдаёт текст последнего сообщения,
+                    // но не его время. Уже узнанное время переносим — но только
+                    // пока текст тот же: сменился текст, значит сменилось и
+                    // сообщение, и время надо спрашивать заново.
+                    updated.lastMessageDate = prev.lastMessageDate
+                }
             }
             return updated
         }
@@ -133,12 +149,18 @@ final class ChatListViewModel: ObservableObject {
     /// сразу при каждом обновлении: два десятка тяжёлых запросов разом, отсюда и
     /// «обновление длится вечность».
     ///
-    /// Поэтому: личным перепискам превью не запрашиваем вовсе (сервер отдаёт его
-    /// прямо в списке переписок), мероприятиям — только тем, где превью ещё нет,
-    /// и не больше нескольких запросов одновременно. Дальше превью поддерживают
-    /// живые сообщения из сокета.
+    /// Поэтому мероприятиям — только тем, где превью ещё нет, и не больше
+    /// нескольких запросов одновременно. Дальше превью поддерживают живые
+    /// сообщения из сокета.
+    ///
+    /// Личным перепискам текст сервер отдаёт прямо в списке, а вот времени
+    /// последнего сообщения в этом списке нет вовсе — за ним и идём, по разу на
+    /// переписку: узнанное время переживает обновления списка (см. `merged`),
+    /// так что второй раз спрашивать не приходится.
     private func loadPreviews(session: AppSession) async {
+        let myId = session.currentUser?.id
         let pending = eventChats.filter { $0.lastMessagePreview == nil }
+            + dmChats.filter { $0.lastMessageDate == nil }
         guard !pending.isEmpty else { return }
 
         let window = 4
@@ -155,7 +177,7 @@ final class ChatListViewModel: ObservableObject {
             while let (chatId, message) = await group.next() {
                 if Task.isCancelled { return }
                 if let message {
-                    apply(chatId: chatId, preview: message.previewText, date: message.sentAt)
+                    apply(chatId: chatId, message: message, myId: myId)
                 }
                 addNext()
             }
@@ -163,13 +185,14 @@ final class ChatListViewModel: ObservableObject {
         sortByActivity()
     }
 
-    private func apply(chatId: String, preview: String, date: Date) {
+    private func apply(chatId: String, message: Message, myId: String?) {
         if let i = eventChats.firstIndex(where: { $0.id == chatId }) {
-            eventChats[i].lastMessagePreview = preview
-            eventChats[i].lastMessageDate = date
+            eventChats[i].lastMessagePreview = message.previewText
+            eventChats[i].lastMessageDate = message.sentAt
         } else if let i = dmChats.firstIndex(where: { $0.id == chatId }) {
-            dmChats[i].lastMessagePreview = preview
-            dmChats[i].lastMessageDate = date
+            dmChats[i].lastMessagePreview =
+                Self.dmPreview(message.previewText, isMine: message.senderId == myId)
+            dmChats[i].lastMessageDate = message.sentAt
         }
     }
 

@@ -52,10 +52,14 @@ final class VoiceRecorder: NSObject, ObservableObject {
     /// Запись на паузе. Доступна только после фиксации: пока держат палец,
     /// ставить паузу нечем и незачем.
     @Published private(set) var isPaused = false
+    /// Громкость голоса, 0…1 — по ней дышит волна вокруг кнопки.
+    /// Считается, только пока это кому-то нужно, см. `setMetering`.
+    @Published private(set) var level: Double = 0
 
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var fileURL: URL?
+    private var isMetering = false
 
     /// Время старта и накопленная пауза — по ним и считаем длительность.
     ///
@@ -160,14 +164,34 @@ final class VoiceRecorder: NSObject, ObservableObject {
                     AVNumberOfChannelsKey: 1,      // голос — моно, вдвое меньше данных
                     AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
                 ]
-                guard let recorder = try? AVAudioRecorder(url: url, settings: settings),
-                      recorder.record() else {
+                guard let recorder = try? AVAudioRecorder(url: url, settings: settings) else {
+                    cont.resume(throwing: RecorderError.failed)
+                    return
+                }
+                // Замер громкости включаем до старта: на ходу это работает не
+                // везде. Спрашивать уровень будем только когда он нужен.
+                recorder.isMeteringEnabled = true
+                guard recorder.record() else {
                     cont.resume(throwing: RecorderError.failed)
                     return
                 }
                 cont.resume(returning: StartedRecorder(recorder: recorder))
             }
         }
+    }
+
+    /// Включить или выключить замер громкости.
+    ///
+    /// Отдельным выключателем, а не «всегда» — намеренно. `updateMeters` — это
+    /// обращение к аудиоочереди, ровно то, из-за чего жест записи шёл рывками:
+    /// главный поток на нём ждёт поток записи. Поэтому меряем только там, где
+    /// волна видна и где пальца на экране уже нет — у зафиксированной записи.
+    /// Сам замер в рекордере включён с самого начала: включать его на ходу
+    /// ненадёжно, а считать громкость буфера потоку записи почти ничего не
+    /// стоит. Дорого — спрашивать её отсюда, это и переключаем.
+    func setMetering(_ on: Bool) {
+        isMetering = on
+        if !on { level = 0 }
     }
 
     /// Приостановить запись. Файл остаётся тем же — продолжение допишется в него.
@@ -216,7 +240,25 @@ final class VoiceRecorder: NSObject, ObservableObject {
         isRecording = false
         isPaused = false
         duration = 0
+        isMetering = false
+        level = 0
         Task { await AudioSessionGate.shared.deactivate() }
+    }
+
+    /// Пересчитать громкость в 0…1.
+    ///
+    /// Микрофон отдаёт децибелы относительно максимума: −160 это тишина, 0 —
+    /// клиппинг. Речь живёт примерно между −45 и −5, поэтому и растягиваем
+    /// именно этот отрезок — иначе волна почти не шевелилась бы. Сглаживаем:
+    /// без этого она дёргается на каждом слоге вместо того, чтобы дышать.
+    private func updateLevel(_ recorder: AVAudioRecorder) {
+        recorder.updateMeters()
+        let db = Double(recorder.averagePower(forChannel: 0))
+        let loud = min(1, max(0, (db + 45) / 40))
+        let smoothed = level * 0.6 + loud * 0.4
+        // Мелкую рябь не публикуем: каждая публикация — обновление интерфейса.
+        guard abs(smoothed - level) > 0.02 else { return }
+        level = smoothed
     }
 
     private func startTimer() {
@@ -228,7 +270,8 @@ final class VoiceRecorder: NSObject, ObservableObject {
             // потоке, и прыгать через задачу незачем: двадцать задач в секунду
             // и сами по себе работа, и обновление счётчика от них отстаёт.
             MainActor.assumeIsolated {
-                guard let self, self.recorder != nil else { return }
+                guard let self, let recorder = self.recorder else { return }
+                if self.isMetering { self.updateLevel(recorder) }
                 // Считаем в десятых и публикуем, только когда цифра правда
                 // сменилась. Каждая публикация — это обновление интерфейса, а
                 // приходятся они на то же время, когда палец ведёт кнопку

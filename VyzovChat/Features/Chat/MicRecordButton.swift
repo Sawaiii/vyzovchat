@@ -17,6 +17,9 @@ struct MicRecordButton: View {
     /// Идёт запись или её вот-вот начнут — над кнопкой показываем замок/паузу.
     let isActive: Bool
     let isPaused: Bool
+    /// Нужен только волне вокруг кнопки. Обычным свойством, а не наблюдаемым:
+    /// следит за ним сама волна, чтобы громкость не дёргала всю кнопку.
+    let recorder: VoiceRecorder
 
     let onStart: () -> Void
     let onLock: () -> Void
@@ -41,6 +44,10 @@ struct MicRecordButton: View {
                      onLock: onLock,
                      onCancel: onCancel,
                      onFinish: onFinish)
+            // Волна — только у зафиксированной записи. Пока палец на экране,
+            // её всё равно не видно за ним, а замер громкости стоил бы ровно
+            // там, где идёт жест.
+            .background { if isLocked { VoiceLevelWave(recorder: recorder) } }
             // Полоса и замок висят над кнопкой по её месту в лейауте, а не по
             // тому, куда её увёл палец: смещение круга лежит внутри и наружу не
             // выходит, поэтому цель остаётся стоять — к ней и ведут.
@@ -205,6 +212,34 @@ private struct RecordCircle: View {
 
     /// Рост под пальцем и возврат на место — одна и та же пружина.
     private static let grow = Animation.spring(response: 0.28, dampingFraction: 0.78)
+}
+
+/// Волна вокруг зафиксированной записи: дышит от громкости голоса.
+///
+/// За громкостью следит она одна. Кнопка про эту вьюху ничего не знает —
+/// иначе каждое изменение громкости пересобирало бы и её.
+private struct VoiceLevelWave: View {
+    @ObservedObject var recorder: VoiceRecorder
+
+    var body: some View {
+        ZStack {
+            ring(opacity: 0.16, spread: 1.1)
+            ring(opacity: 0.10, spread: 1.9)
+        }
+        .frame(width: 40, height: 40)
+        // Между замерами (двадцать в секунду) волна доезжает сама, иначе она
+        // прыгала бы ступеньками. Пружина мягкая: голос дышит, а не стучит.
+        .animation(.spring(response: 0.22, dampingFraction: 0.7), value: recorder.level)
+        .allowsHitTesting(false)
+    }
+
+    /// Кольцо тем шире, чем громче. Единица в основании — чтобы в тишине оно
+    /// совпадало с кнопкой и не выглядывало из-под неё ободком.
+    private func ring(opacity: Double, spread: Double) -> some View {
+        Circle()
+            .fill(Theme.accent.opacity(opacity))
+            .scaleEffect(1 + spread * recorder.level)
+    }
 }
 
 /// Как кнопка записи выглядит. Ни про жест, ни про смещение не знает —
