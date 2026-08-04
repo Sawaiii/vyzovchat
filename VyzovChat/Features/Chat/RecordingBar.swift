@@ -3,26 +3,26 @@ import SwiftUI
 /// Строка записи голосового: красная точка, счётчик и подсказка (или «Отмена»,
 /// когда запись зафиксирована).
 ///
-/// Отдельная вью со своим наблюдением за рекордером — счётчик тикает двадцать
-/// раз в секунду, и держать его прямо в чате значило бы перерисовывать всю
-/// ленту на каждый тик.
+/// Сама за рекордером НЕ следит — это важно. Счётчик тикает двадцать раз в
+/// секунду, и пока за ним следила вся строка, каждый тик пересчитывал её
+/// раскладку. Приходились эти тики ровно на движение пальца по кнопке записи,
+/// и жест шёл рывками: между двумя кадрами жеста успевал влезть пересчёт
+/// строки. Теперь тикает только сам счётчик, и размер у него намертво
+/// зафиксирован — наружу пересчёт не выходит.
 ///
 /// Самой кнопки записи здесь нет: она общая для всех состояний поля ввода и
 /// живёт выше по дереву. Вынуть её из дерева посреди удержания нельзя —
 /// вместе с ней оборвался бы жест, а с ним и запись.
 struct RecordingBar: View {
-    @ObservedObject var recorder: VoiceRecorder
+    /// Без @ObservedObject намеренно: см. выше.
+    let recorder: VoiceRecorder
     /// Запись зафиксирована: палец отпущен, и отмена стала обычной кнопкой.
     let isLocked: Bool
     let onCancel: () -> Void
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
-            Circle().fill(Theme.danger).frame(width: 9, height: 9)
-                .opacity(dotOpacity)
-            Text(Self.durationLabel(recorder.duration))
-                .font(Typography.callout.monospacedDigit())
-                .foregroundStyle(Theme.textPrimary)
+            RecordingCounter(recorder: recorder)
             Spacer(minLength: Spacing.s)
         }
         .overlay {
@@ -43,6 +43,28 @@ struct RecordingBar: View {
         // Место справа под кнопку записи: она нарисована поверх строки.
         .padding(.trailing, 48)
         .frame(height: 40)
+    }
+}
+
+/// Точка и время записи — единственное, что обновляется двадцать раз в секунду.
+///
+/// Ширина задана жёстко. Без неё каждая сотая доля меняла ширину текста, а
+/// значит и раскладку строки ввода, и пересчёт уходил вверх по дереву — до
+/// ленты сообщений. С фиксированным размером система знает, что снаружи ничего
+/// не изменилось, и дальше счётчика не идёт.
+private struct RecordingCounter: View {
+    @ObservedObject var recorder: VoiceRecorder
+
+    var body: some View {
+        HStack(spacing: Spacing.xs) {
+            Circle().fill(Theme.danger).frame(width: 9, height: 9)
+                .opacity(dotOpacity)
+            Text(Self.durationLabel(recorder.duration))
+                .font(Typography.callout.monospacedDigit())
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+        }
+        .frame(width: 96, height: 40, alignment: .leading)
     }
 
     /// На паузе точка не мигает, а просто гаснет — иначе не отличить.

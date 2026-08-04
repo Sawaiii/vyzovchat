@@ -32,16 +32,17 @@ struct ChatInputBar: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            Group {
+            ZStack {
+                // Поле не убираем из дерева на время записи, а прячем. Поле
+                // ввода — тяжёлая вещь: его разбор и сборка заново приходились
+                // ровно на начало и конец жеста записи.
+                textField
+                    .opacity(isRecordingUI ? 0 : 1)
+                    .allowsHitTesting(!isRecordingUI)
                 if isRecordingUI {
-                    // Счётчик тикает двадцать раз в секунду. Он живёт в отдельной
-                    // вью со своим наблюдением за рекордером — иначе
-                    // перерисовывалась бы вся строка на каждый тик.
                     RecordingBar(recorder: model.recorder,
                                  isLocked: isLocked,
                                  onCancel: { cancel() })
-                } else {
-                    textField
                 }
             }
             .padding(.horizontal, Spacing.s).padding(.vertical, Spacing.xs)

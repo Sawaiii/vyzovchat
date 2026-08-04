@@ -152,10 +152,6 @@ private struct RecordCircle: View {
                     phase = .tracking
                     pressing = true
                     if lockArmed { lockArmed = false }
-                    // Разогреваем движок заранее: отклик на старт записи и на
-                    // замок должен приходить сразу, а не будить движок в тот же
-                    // миг, когда палец уже ведёт кнопку.
-                    Haptics.prepare()
                     onStart()
                 }
                 // Вверх до замка — фиксируем, влево — отменяем. Считаем по

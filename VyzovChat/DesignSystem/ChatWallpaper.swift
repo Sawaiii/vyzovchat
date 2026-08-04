@@ -20,6 +20,12 @@ struct ChatTheme {
 }
 
 /// Фон чата целиком: градиент + плитка паттерна поверх него.
+///
+/// Собирается в картинку один раз (`drawingGroup`). Паттерн — плитка в режиме
+/// шаблона, то есть перекрашиваемая при отрисовке, и растянута она на весь
+/// экран. Всё, что двигается поверх чата — выросшая кнопка записи с
+/// полупрозрачным ореолом, — заставляло пересобирать этот фон под собой на
+/// каждом кадре. Фон при этом не меняется никогда: цвет мероприятия постоянен.
 struct ChatWallpaper: View {
     let colorHex: String?
 
@@ -28,10 +34,12 @@ struct ChatWallpaper: View {
             LinearGradient(colors: [theme.top, theme.bottom], startPoint: .top, endPoint: .bottom)
                 .overlay(patternLayer(tint: theme.pattern))
                 .ignoresSafeArea()
+                .drawingGroup()
         } else {
             AmbientBackground()
                 .overlay(patternLayer(tint: Color.white.opacity(0.04)))
                 .ignoresSafeArea()
+                .drawingGroup()
         }
     }
 

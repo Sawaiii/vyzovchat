@@ -9,32 +9,20 @@ extension UIApplication {
 
 /// Тактильная обратная связь для ключевых действий.
 ///
-/// Генераторы общие и живут всё время работы приложения. У тактильного движка
-/// есть раскрутка: новый генератор на каждый вызов означал, что движок заводится
-/// заново прямо в момент действия — и первый отклик стоил заметной паузы на
-/// главном потоке. Общий генератор остаётся тёплым между вызовами.
+/// Генератор создаётся на каждый вызов — намеренно. Общий, живущий всё время
+/// работы приложения, отклик глушил: движок к нему просто переставал
+/// отзываться. Экономия на создании того не стоила.
 enum Haptics {
-    private static let impact = UIImpactFeedbackGenerator(style: .light)
-    private static let notice = UINotificationFeedbackGenerator()
-    private static let select = UISelectionFeedbackGenerator()
-
-    /// Разогреть движок заранее — перед действием, отклик на которое должен
-    /// прийти мгновенно (например, в начале жеста записи).
-    static func prepare() {
-        impact.prepare()
-        notice.prepare()
-    }
-
     static func tap() {
-        impact.impactOccurred()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
     static func success() {
-        notice.notificationOccurred(.success)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
     static func warning() {
-        notice.notificationOccurred(.warning)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
     static func selection() {
-        select.selectionChanged()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 }
