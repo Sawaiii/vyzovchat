@@ -79,6 +79,8 @@ final class ChatViewModel: ObservableObject {
     @Published var topicUnread: [String: Int] = [:]
     /// Кэш лент по темам (для листания без пустых экранов).
     private var messagesByTopic: [String: [Message]] = [:]
+    /// Готовые ленты неактивных тем — см. `staticFeed(for:)`.
+    private var feedByTopic: [String: [ChatFeedItem]] = [:]
 
     /// Готовая лента активной темы (разделители + альбомы + пометки прочтения).
     /// Пересчитывается только при изменении `messages`/`search` — а НЕ на каждом
@@ -327,9 +329,21 @@ final class ChatViewModel: ObservableObject {
         return result
     }
 
-    /// Лента неактивной темы (в пейджере) — строим на лету из её кэша.
+    /// Лента неактивной темы (в пейджере) — берём готовую из кэша.
+    ///
+    /// Раньше она собиралась прямо здесь, на каждый вызов. А вызывается это из
+    /// тела экрана, и в пейджере лежат сразу все темы: любое обновление чата —
+    /// буква в поле ввода, чужой статус в сети, нажатие на микрофон — заново
+    /// пересобирало ленту каждой темы, с разбором дат по всем её сотням
+    /// сообщений. Отсюда и рывки на ровном месте.
     func staticFeed(for topicId: Int?) -> [ChatFeedItem] {
-        buildFeed(cachedMessages(for: topicId))
+        feedByTopic[topicKey(topicId)] ?? []
+    }
+
+    /// Запомнить ленту темы вместе с уже разложенной раскладкой.
+    private func cacheTopic(_ list: [Message], for key: String) {
+        messagesByTopic[key] = list
+        feedByTopic[key] = buildFeed(list)
     }
 
     /// Склейка альбома: несколько фото одной отправкой — одним сообщением-сеткой.
@@ -420,7 +434,7 @@ final class ChatViewModel: ObservableObject {
             let key = topicKey(message.topicId)
             if var feed = messagesByTopic[key], !feed.contains(where: { $0.id == message.id }) {
                 feed.append(message)
-                messagesByTopic[key] = feed
+                cacheTopic(feed, for: key)
             }
             Task { await refreshTopicUnread() }
             return
@@ -489,7 +503,7 @@ final class ChatViewModel: ObservableObject {
             // Не удалось — кэш темы не создаём: пустой кэш выглядел бы как
             // «в теме ничего нет», и свайп показывал бы пустую страницу.
             while let (key, feed) = await group.next() {
-                if let feed { messagesByTopic[key] = feed }
+                if let feed { cacheTopic(feed, for: key) }
                 addNext()
             }
         }
@@ -500,7 +514,7 @@ final class ChatViewModel: ObservableObject {
     /// поэтому «что загружено» считаем отдельно.
     func selectTopic(_ id: Int?) async {
         guard loadedTopicId != id else { return }
-        messagesByTopic[topicKey(loadedTopicId)] = messages   // запомнили текущую
+        cacheTopic(messages, for: topicKey(loadedTopicId))   // запомнили текущую
         loadedTopicId = id
         selectedTopicId = id
         lastMarkedRead = 0
@@ -523,7 +537,7 @@ final class ChatViewModel: ObservableObject {
             let merged = cached.isEmpty ? fresh : mergedFeed(cached, fresh)
             // В кэш темы кладём всегда — ответ по ней верный, даже если человек
             // уже ушёл дальше.
-            messagesByTopic[topicKey(id)] = merged
+            cacheTopic(merged, for: topicKey(id))
             // А открытую ленту трогаем, ТОЛЬКО если это всё ещё та же тема.
             // При быстром свайпе через несколько тем ответ по первой приходил,
             // когда открыта уже третья, и подменял ей ленту чужими сообщениями —
@@ -1379,7 +1393,7 @@ final class ChatViewModel: ObservableObject {
         guard let window = await service.fetchMessages(chatId: chat.id, topicId: message.topicId, around: id),
               !window.isEmpty else { return }
         messages = window
-        messagesByTopic[topicKey(message.topicId)] = window
+        cacheTopic(window, for: topicKey(message.topicId))
         // Через initialAnchorId нельзя: он срабатывает только на первой загрузке
         // чата, а тут лента уже открыта — прокрутка ушла бы в конец.
         jumpNeedsSettle = true

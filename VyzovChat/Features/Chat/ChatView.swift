@@ -578,7 +578,10 @@ struct ChatView: View {
     private func settleCentered(_ proxy: ScrollViewProxy, to id: String) {
         proxy.scrollTo(id, anchor: .center)
         Task {
-            for delay in [16, 60, 160, 350] {
+            // Долго и с запасом: лента прижата к низу, и пока она достраивается
+            // после подмены, каждый её перерасчёт тянет прокрутку обратно в
+            // конец. Побеждает тот, кто скажет последним.
+            for delay in [16, 60, 120, 200, 320, 500, 750, 1050] {
                 try? await Task.sleep(for: .milliseconds(delay))
                 proxy.scrollTo(id, anchor: .center)
             }
@@ -670,7 +673,11 @@ struct ChatView: View {
                 }
             }
         )
-        .id(message.id)
+        // Своего .id(message.id) здесь нет намеренно. Строка ленты и так
+        // опознаётся этим же идентификатором — им же её и находит прокрутка.
+        // А вот второй такой же id внутри строки прокрутке мешал: пока строка
+        // не построена, найти его негде, и переход к сообщению, которого сейчас
+        // нет на экране, молча не срабатывал.
     }
 
     static let chatSpace = "chatSpace"
