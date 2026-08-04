@@ -121,7 +121,10 @@ private struct RecordCircle: View {
             // Ореол рисуется уже поверх выросшего круга: попади он раньше
             // масштаба, тот бы на него умножился и залил пол-экрана.
             .background { ripple }
-            .animation(.spring(response: 0.3, dampingFraction: 0.72), value: pressing)
+            // Анимации через модификатор здесь нет намеренно: она осталась бы в
+            // теле, которое пересобирается на каждый кадр движения пальца, и
+            // система заново разбирала бы её на каждом кадре. Рост и возврат
+            // анимируем явно, в тот единственный момент, когда они начинаются.
             .contentShape(Rectangle())
             // Круг едет за пальцем к замку. Смещение не меняет место в лейауте,
             // поэтому сам замок остаётся стоять — к нему и ведут.
@@ -150,7 +153,7 @@ private struct RecordCircle: View {
                 guard !isLocked, phase != .spent else { return }
                 if phase == .idle {
                     phase = .tracking
-                    pressing = true
+                    withAnimation(Self.grow) { pressing = true }
                     if lockArmed { lockArmed = false }
                     onStart()
                 }
@@ -207,8 +210,13 @@ private struct RecordCircle: View {
     /// Возврат — с пружиной: на резком свайпе круг уезжает далеко, и прыжок
     /// назад без анимации читается как сбой.
     private func release() {
-        pressing = false
         if lockArmed { lockArmed = false }
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { drag = .zero }
+        withAnimation(Self.grow) {
+            pressing = false
+            drag = .zero
+        }
     }
+
+    /// Рост под пальцем и возврат на место — одна и та же пружина.
+    private static let grow = Animation.spring(response: 0.28, dampingFraction: 0.78)
 }
