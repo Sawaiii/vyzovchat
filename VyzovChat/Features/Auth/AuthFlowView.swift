@@ -5,6 +5,7 @@ struct AuthFlowView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.adaptiveMetrics) private var metrics
     @State private var appear = false
+    @State private var showInvite = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +55,13 @@ struct AuthFlowView: View {
                                 .frame(height: 54)
                                 .glass(cornerRadius: 27, elevated: false)
                         }
+
+                        // Склад приходит по ссылке из CRM: пароля у него нет вовсе,
+                        // и без этой кнопки войти в приложение он не может никак.
+                        Button("У меня есть ссылка-приглашение") { showInvite = true }
+                            .font(Typography.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.top, Spacing.xxs)
                     }
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 30)
@@ -62,6 +70,9 @@ struct AuthFlowView: View {
                 .padding(.bottom, Spacing.xl)
             }
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .sheet(isPresented: $showInvite) {
+            InvitePasteView().environmentObject(session)
         }
         .onAppear {
             withAnimation(.smooth(duration: 0.7)) { appear = true }

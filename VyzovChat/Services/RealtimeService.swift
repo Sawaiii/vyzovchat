@@ -39,6 +39,8 @@ final class RealtimeService: ObservableObject {
     let groupReadUpdates = PassthroughSubject<(eventId: String, workerId: String, lastRead: Int), Never>()
     /// Состав мероприятий изменился — перезагрузить списки.
     let eventsChanged = PassthroughSubject<Void, Never>()
+    /// Состав или роль в конкретном мероприятии (id) — перечитать свои права.
+    let membersChanged = PassthroughSubject<String, Never>()
     /// Изменился справочник сотрудников (аватар/имя).
     let workersChanged = PassthroughSubject<Void, Never>()
     /// Изменилось содержимое общего диска.
@@ -505,6 +507,9 @@ final class RealtimeService: ObservableObject {
 
         case "members:changed":
             eventsChanged.send(())
+            // …и отдельно с id мероприятия: сервер шлёт этот кадр и при смене роли,
+            // а от роли зависят кнопки в открытом чате (`me_rights`).
+            membersChanged.send(Self.idString(root["eventId"] ?? ""))
 
         case "disk:change":
             diskChanged.send(())

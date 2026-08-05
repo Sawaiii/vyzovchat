@@ -11,6 +11,8 @@ struct PhotobankBrowser: View {
 
     @State private var preview: MediaPreview?
     @State private var editing: PhotobankItemDTO?
+    /// Фото, которое убираем из фотобанка (спрашиваем подтверждение).
+    @State private var removing: PhotobankItemDTO?
     @FocusState private var searchFocused: Bool
 
     // Отбор для скачивания архивом
@@ -39,6 +41,18 @@ struct PhotobankBrowser: View {
         }
         .sheet(item: $editing) { item in
             PhotobankTagEditor(item: vm.current(item), vm: vm)
+        }
+        .confirmationDialog("Убрать фото из фотобанка?",
+                            isPresented: .init(get: { removing != nil },
+                                               set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible) {
+            Button("Убрать", role: .destructive) {
+                if let item = removing { Task { await vm.remove(item) } }
+                removing = nil
+            }
+            Button("Отмена", role: .cancel) { removing = nil }
+        } message: {
+            Text("В чате мероприятия фото останется — пропадёт только из фотобанка.")
         }
     }
 
@@ -288,6 +302,13 @@ struct PhotobankBrowser: View {
             }
             if let url = item.imageURL {
                 ShareLink(item: url) { Label("Поделиться", systemImage: "square.and.arrow.up") }
+            }
+            if isAdmin {
+                // Убирает только из фотобанка: в чате мероприятия фото остаётся,
+                // и вернуть его можно повторным отбором.
+                Button(role: .destructive) { removing = item } label: {
+                    Label("Убрать из фотобанка", systemImage: "trash")
+                }
             }
         }
         .overlay(alignment: .topTrailing) {

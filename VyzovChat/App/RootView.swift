@@ -21,6 +21,17 @@ struct RootView: View {
             }
         }
         .animation(.smooth(duration: 0.45), value: session.authState)
+        // Приглашение перекрывает всё: по ссылке приходят и те, кто ещё не вошёл
+        // (гость склада), и те, кто уже сидит в приложении под своим логином.
+        .fullScreenCover(isPresented: Binding(
+            get: { session.pendingInvite != nil },
+            set: { if !$0 { session.pendingInvite = nil } })
+        ) {
+            if let token = session.pendingInvite {
+                JoinView(token: token) { session.pendingInvite = nil }
+                    .environmentObject(session)
+            }
+        }
         .task {
             await session.bootstrap()
         }

@@ -76,6 +76,8 @@ protocol PhotobankServicing {
     func addTag(itemId: Int, tag: String) async
     func removeTag(itemId: Int, tag: String) async
     func markModerated(itemId: Int) async
+    /// Убрать фото из фотобанка (в чате оно остаётся).
+    func remove(itemId: Int) async
     /// Скачать выбранные фото одним архивом.
     func zip(ids: [Int]) async throws -> URL
 }
@@ -130,6 +132,12 @@ final class RealPhotobankService: PhotobankServicing {
                                              json: EmptyBody(), as: OKDTO.self)
     }
 
+    /// Убрать из фотобанка. Сообщение с фото остаётся в чате: удаляется только
+    /// отметка «в фотобанке» — вернуть фото можно повторным отбором.
+    func remove(itemId: Int) async {
+        _ = try? await APIClient.shared.delete("/api/photobank/\(itemId)", as: OKDTO.self)
+    }
+
     /// Выбранные фото одним архивом — сервер собирает zip и отдаёт файлом.
     func zip(ids: [Int]) async throws -> URL {
         struct Req: Encodable { let ids: [Int] }
@@ -150,5 +158,6 @@ final class MockPhotobankService: PhotobankServicing {
     func addTag(itemId: Int, tag: String) async {}
     func removeTag(itemId: Int, tag: String) async {}
     func markModerated(itemId: Int) async {}
+    func remove(itemId: Int) async {}
     func zip(ids: [Int]) async throws -> URL { FileManager.default.temporaryDirectory }
 }

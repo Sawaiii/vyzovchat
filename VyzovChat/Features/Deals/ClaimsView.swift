@@ -70,11 +70,12 @@ struct ClaimsView: View {
             .alert("Урегулировать претензию", isPresented: Binding(
                 get: { closing != nil }, set: { if !$0 { closing = nil } })
             ) {
-                TextField("Комментарий", text: $closeComment)
+                TextField("Чем закончилось", text: $closeComment)
                 Button("Урегулировать") { Task { await close() } }
+                    .disabled(closeComment.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button("Отмена", role: .cancel) { closing = nil; closeComment = "" }
             } message: {
-                Text("Комментарий уйдёт в подтему «Претензия», чтобы решение осталось в чате.")
+                Text("Комментарий обязателен: сервер хранит его у претензии и показывает в карточке.")
             }
             .alert("Удалить претензию", isPresented: Binding(
                 get: { deleting != nil }, set: { if !$0 { deleting = nil } })
@@ -120,11 +121,27 @@ struct ClaimsView: View {
                             Text(author + (claim.author_role.map { " · \($0)" } ?? ""))
                                 .font(.caption2).foregroundStyle(Theme.textSecondary)
                         }
+                        // Чем закончилось: сервер хранит комментарий и того, кто
+                        // урегулировал, — раньше это оставалось только в чате.
+                        if let note = claim.settled_note, !note.isEmpty {
+                            Text("Итог: " + note)
+                                .font(Typography.caption).foregroundStyle(Theme.textPrimary)
+                            if let who = claim.settled_fio, !who.isEmpty {
+                                Text("урегулировал(а) " + who)
+                                    .font(.caption2).foregroundStyle(Theme.textSecondary)
+                            }
+                        }
                         if isChatAdmin && claim.isOpen {
-                            // Открытая претензия не даёт завершить мероприятие,
-                            // поэтому её надо явно урегулировать.
-                            Button("Урегулирована") { closing = claim; closeComment = "" }
-                                .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                            HStack(spacing: Spacing.m) {
+                                // Открытая претензия не даёт завершить мероприятие,
+                                // поэтому её надо явно урегулировать.
+                                Button("Урегулирована") { closing = claim; closeComment = "" }
+                                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                                if claim.status != "sent" {
+                                    Button("Отправить в CRM") { Task { await send(claim) } }
+                                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -231,21 +248,31 @@ struct ClaimsView: View {
         }
     }
 
-    /// Закрыть претензию и оставить решение в чате.
+    /// Урегулировать претензию.
     ///
-    /// Сервер комментарий при закрытии не принимает, поэтому пишем его отдельным
-    /// сообщением в подтему «Претензия» — иначе решение нигде бы не осталось.
+    /// Комментарий уходит на сервер (`{note}`) — он обязателен, и без него запрос
+    /// отвергается с `note_required`. В чат его больше не дублируем: решение
+    /// хранится у самой претензии и видно в карточке всем, кто её откроет.
     private func close() async {
         guard let claim = closing else { return }
         let comment = closeComment.trimmingCharacters(in: .whitespaces)
+        guard !comment.isEmpty else { return }
         closing = nil
         closeComment = ""
         do {
-            try await session.eventInfo.closeClaim(id: claim.id)
-            if !comment.isEmpty {
-                RealtimeService.shared.sendText("Претензия урегулирована: " + comment,
-                                                eventId: dealId, topicId: claimTopicId)
-            }
+            try await session.eventInfo.closeClaim(id: claim.id, note: comment)
+            Haptics.success()
+            await load()
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
+    }
+
+    /// Отправить претензию в учётную систему — «ущербы» сделки.
+    private func send(_ claim: ClaimDTO) async {
+        do {
+            try await session.eventInfo.sendClaim(id: claim.id)
             Haptics.success()
             await load()
         } catch {

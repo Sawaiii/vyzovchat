@@ -17,12 +17,19 @@ protocol EventInfoServicing {
     func deleteDocument(dealId: String, docId: Int) async throws
     /// Отметить документ отправленным в Tony (учётную систему).
     func sendDocumentToTony(dealId: String, docId: Int) async throws
+    /// Отправить в Tony все документы разом. Возвращает, сколько ушло.
+    func sendAllDocumentsToTony(dealId: String) async throws -> Int
+    /// Сложить файлы документов на общий Диск (папка мероприятия). Возвращает, сколько скопировано.
+    func documentsToDisk(dealId: String) async throws -> Int
 
     // Претензии
     func claims(dealId: String) async -> [ClaimDTO]
     func createClaim(dealId: String, items: [CreateClaimRequest.Item]) async throws
     /// «Урегулирована» — снимает блокировку завершения мероприятия.
-    func closeClaim(id: Int) async throws
+    /// Комментарий обязателен: сервер хранит его у претензии и без него отвечает 400.
+    func closeClaim(id: Int, note: String) async throws
+    /// Отправить претензию в CRM (Tony) — «ущербы» сделки.
+    func sendClaim(id: Int) async throws
     func deleteClaim(id: Int) async throws
 
     // Приглашения
@@ -68,6 +75,20 @@ final class RealEventInfoService: EventInfoServicing {
                                             json: EmptyBody(), as: OKDTO.self)
     }
 
+    func sendAllDocumentsToTony(dealId: String) async throws -> Int {
+        struct CountDTO: Decodable { let count: Int? }
+        let dto = try await APIClient.shared.post("/api/events/\(dealId)/documents/tony",
+                                                  json: EmptyBody(), as: CountDTO.self)
+        return dto.count ?? 0
+    }
+
+    func documentsToDisk(dealId: String) async throws -> Int {
+        struct CountDTO: Decodable { let count: Int? }
+        let dto = try await APIClient.shared.post("/api/events/\(dealId)/documents/disk",
+                                                  json: EmptyBody(), as: CountDTO.self)
+        return dto.count ?? 0
+    }
+
     // MARK: - Претензии
 
     func claims(dealId: String) async -> [ClaimDTO] {
@@ -80,8 +101,13 @@ final class RealEventInfoService: EventInfoServicing {
                                             json: CreateClaimRequest(items: items), as: CreatedDTO.self)
     }
 
-    func closeClaim(id: Int) async throws {
-        _ = try await APIClient.shared.post("/api/claims/\(id)/close", json: EmptyBody(), as: OKDTO.self)
+    func closeClaim(id: Int, note: String) async throws {
+        _ = try await APIClient.shared.post("/api/claims/\(id)/close",
+                                            json: CloseClaimRequest(note: note), as: OKDTO.self)
+    }
+
+    func sendClaim(id: Int) async throws {
+        _ = try await APIClient.shared.post("/api/claims/\(id)/send", json: EmptyBody(), as: OKDTO.self)
     }
 
     func deleteClaim(id: Int) async throws {
@@ -100,7 +126,8 @@ final class MockEventInfoService: EventInfoServicing {
     func equipment(dealId: String) async -> [EquipmentDTO] { [] }
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO {
         EquipmentDTO(id: 0, name: name, qty: qty, crm_url: nil,
-                     loaded_at: nil, loaded_by: nil, returned_at: nil, returned_by: nil)
+                     loaded_at: nil, loaded_by: nil, returned_at: nil, returned_by: nil,
+                     claim_status: nil, claim_note: nil)
     }
     func deleteEquipment(dealId: String, itemId: Int) async throws {}
     func documents(dealId: String) async -> [DocumentDTO] { [] }
@@ -110,9 +137,12 @@ final class MockEventInfoService: EventInfoServicing {
     }
     func deleteDocument(dealId: String, docId: Int) async throws {}
     func sendDocumentToTony(dealId: String, docId: Int) async throws {}
+    func sendAllDocumentsToTony(dealId: String) async throws -> Int { 0 }
+    func documentsToDisk(dealId: String) async throws -> Int { 0 }
     func claims(dealId: String) async -> [ClaimDTO] { [] }
     func createClaim(dealId: String, items: [CreateClaimRequest.Item]) async throws {}
-    func closeClaim(id: Int) async throws {}
+    func closeClaim(id: Int, note: String) async throws {}
+    func sendClaim(id: Int) async throws {}
     func deleteClaim(id: Int) async throws {}
     func createInvite(dealId: String, role: String) async throws -> InviteDTO {
         InviteDTO(token: "mock", path: "/join/mock", role: role, event_name: nil)

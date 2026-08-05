@@ -245,6 +245,9 @@ struct ChatRow: View {
                 if !chat.isDirect {
                     HStack(spacing: 5) {
                         if let company = chat.company { CompanyBadge(name: company) }
+                        // Своя роль в мероприятии: старший и кладовщик отвечают
+                        // за этапы, и знать об этом надо ещё до входа в чат.
+                        if let role = chat.myRoleChip { RoleChip(role: role) }
                         StatusBadgesRow(badges: chat.statusBadges, compact: true)
                     }
                 }

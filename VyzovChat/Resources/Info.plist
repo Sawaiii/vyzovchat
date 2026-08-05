@@ -50,5 +50,18 @@
 	<string>Vyzov Chat добавляет геометку к фото с мероприятия — это нужно для юридического подтверждения места съёмки.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Automatic</string>
+	<!-- Ссылка-приглашение: vyzovchat://join/<token>. Универсальные https-ссылки
+	     требуют apple-app-site-association на сервере, а сервер не наш. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ru.vyzovchat.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vyzovchat</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

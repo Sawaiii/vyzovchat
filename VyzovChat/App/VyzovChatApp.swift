@@ -21,6 +21,12 @@ struct VyzovChatApp: App {
                 .environmentObject(session)
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark) // тёмная тема как в веб-версии
+                // Ссылка-приглашение. Своя схема `vyzovchat://join/<token>`:
+                // универсальные https-ссылки требуют файла на сервере, а сервер
+                // не наш — веб-ссылку человек вставляет руками на экране входа.
+                .onOpenURL { url in
+                    _ = session.openInvite(rawLink: url.absoluteString)
+                }
         }
     }
 }

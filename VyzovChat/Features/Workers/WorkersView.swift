@@ -6,6 +6,16 @@ struct WorkersView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.adaptiveMetrics) private var metrics
 
+    /// Кого показываем. Гости склада и подрядчики приходят по ссылке на одно
+    /// мероприятие — в общем списке они мешают, поэтому у них своя вкладка.
+    private enum Tab: String, CaseIterable, Identifiable {
+        case staff = "Штат"
+        case guests = "Гости"
+        var id: String { rawValue }
+        var scope: WorkersScope { self == .staff ? .staff : .guests }
+    }
+
+    @State private var tab: Tab = .staff
     @State private var workers: [User] = []
     @State private var query = ""
     @State private var editing: User?
@@ -24,25 +34,44 @@ struct WorkersView: View {
         NavigationStack {
             ZStack {
                 AmbientBackground()
-                if isLoading {
-                    ProgressView().tint(Theme.accent)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: Spacing.xs) {
-                            // Экрана статистики больше нет: эндпоинта
-                            // /api/workers/{id}/stats на сервере не существует.
-                            ForEach(filtered) { worker in
-                                NavigationLink { UserProfileView(user: worker) } label: { row(worker) }
-                                    .buttonStyle(PressableStyle())
-                                    .contextMenu {
-                                        Button { editing = worker } label: {
-                                            Label("Редактировать", systemImage: "pencil")
+                VStack(spacing: Spacing.s) {
+                    Picker("", selection: $tab) {
+                        ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, Spacing.s)
+
+                    if isLoading {
+                        Spacer()
+                        ProgressView().tint(Theme.accent)
+                        Spacer()
+                    } else if filtered.isEmpty {
+                        Spacer()
+                        EmptyState(icon: tab == .staff ? "person.2" : "person.badge.clock",
+                                   title: tab == .staff ? "Сотрудников нет" : "Гостей нет",
+                                   message: tab == .staff
+                                        ? "Заведите сотрудника кнопкой в правом верхнем углу."
+                                        : "Здесь появятся те, кто пришёл по ссылке: склад и подрядчики.")
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: Spacing.xs) {
+                                // Экрана статистики больше нет: эндпоинта
+                                // /api/workers/{id}/stats на сервере не существует.
+                                ForEach(filtered) { worker in
+                                    NavigationLink { UserProfileView(user: worker) } label: { row(worker) }
+                                        .buttonStyle(PressableStyle())
+                                        .contextMenu {
+                                            Button { editing = worker } label: {
+                                                Label("Редактировать", systemImage: "pencil")
+                                            }
                                         }
-                                    }
+                                }
                             }
+                            .padding(.horizontal, metrics.horizontalPadding)
+                            .padding(.vertical, Spacing.s)
                         }
-                        .padding(.horizontal, metrics.horizontalPadding)
-                        .padding(.vertical, Spacing.s)
                     }
                 }
             }
@@ -65,6 +94,7 @@ struct WorkersView: View {
             }
             .task { await load() }
             .refreshable { await load(force: true) }
+            .onChange(of: tab) { Task { await load(force: true) } }
         }
     }
 
@@ -75,11 +105,14 @@ struct WorkersView: View {
                 HStack(spacing: 6) {
                     Text(worker.fullName).font(Typography.callout.weight(.medium))
                         .foregroundStyle(Theme.textPrimary).lineLimit(1)
-                    if worker.isAdmin {
-                        Text("админ").font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
+                    // Плашка роли, а не «админ»: полные права теперь даёт именно
+                    // роль, и «владельца» сервер переименовал в админа.
+                    let role = SystemRole(worker.globalRole)
+                    if role != .worker {
+                        Text(role.title.lowercased()).font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(role.color)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.accent.opacity(0.16), in: Capsule())
+                            .background(role.color.opacity(0.16), in: Capsule())
                     }
                 }
                 Text([worker.login, worker.position].filter { !$0.isEmpty }.joined(separator: " · "))
@@ -108,7 +141,10 @@ struct WorkersView: View {
 
     private func load(force: Bool = false) async {
         if force { DirectoryCache.invalidate() }
-        workers = await DirectoryCache.colleagues()
+        isLoading = workers.isEmpty
+        // Кэш справочника общий и живёт под «всех, кроме гостей склада»,
+        // а здесь список свой на каждую вкладку — спрашиваем сервер напрямую.
+        workers = await session.directory.fetchWorkers(scope: tab.scope)
         isLoading = false
     }
 }

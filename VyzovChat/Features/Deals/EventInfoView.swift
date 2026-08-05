@@ -164,7 +164,10 @@ struct EventInfoView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: Spacing.s) {
                 Text("Позвать по ссылке").font(Typography.headline).foregroundStyle(Theme.textPrimary)
-                Text("Человек откроет ссылку в браузере, заведёт себе вход и сразу попадёт в это мероприятие. Ссылка одноразовая и живёт неделю.")
+                // У ссылок разный срок жизни, и это важно: складскую кладут в
+                // карточку сделки в CRM, к архивному мероприятию по ней заходят
+                // и через год.
+                Text("Ссылка подрядчика одноразовая и живёт неделю. Ссылка кладовщика бессрочная и без ограничения переходов — он только называет себя, пароль не нужен.")
                     .font(.caption2).foregroundStyle(Theme.textSecondary)
 
                 if let invite, let url = invite.url {

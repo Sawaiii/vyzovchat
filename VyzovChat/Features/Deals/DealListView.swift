@@ -195,11 +195,16 @@ struct DealRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(deal.title)
-                .font(Typography.headline)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: Spacing.xs) {
+                Text(deal.title)
+                    .font(Typography.headline)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // «Вы старший» и прочие роли: в списке важно сразу видеть, где с
+                // тебя спрос больше, чем с участника.
+                if let role = deal.myRoleChip { RoleChip(role: role) }
+            }
 
             DealStatusBadges(deal: deal)
 

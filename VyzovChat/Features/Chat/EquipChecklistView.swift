@@ -12,6 +12,8 @@ struct EquipChecklistView: View {
     let canCheck: Bool
     /// Можно ли заводить и убирать позиции — это право админа чата.
     var canEdit: Bool = false
+    /// Можно ли фиксировать претензию по позиции (`me_rights.claims`).
+    var canClaim: Bool = false
     /// Отметили позицию — чтобы чат перечитал счётчики этапов.
     let onChanged: () -> Void
 
@@ -20,6 +22,8 @@ struct EquipChecklistView: View {
     @State private var isLoading = true
     @State private var busyId: Int?
     @State private var errorText: String?
+    /// Позиция, по которой заводим претензию прямо из чеклиста приёма.
+    @State private var claiming: EquipmentDTO?
     // Добавление позиции руками: в CRM попадает не всё, а грузить надо всё.
     @State private var newName = ""
     @State private var newQty = ""
@@ -45,6 +49,19 @@ struct EquipChecklistView: View {
                 Button("Понятно", role: .cancel) { errorText = nil }
             } message: {
                 Text(errorText ?? "")
+            }
+            // Претензия прямо отсюда: на приёмке недостача и бой видны как раз в
+            // тот момент, когда по списку идут, — уходить за этим в другой экран
+            // значит забыть.
+            .confirmationDialog(claiming?.name ?? "Претензия",
+                                isPresented: .init(get: { claiming != nil },
+                                                   set: { if !$0 { claiming = nil } }),
+                                titleVisibility: .visible) {
+                Button("Повреждено") { Task { await fileClaim(kind: "damage") } }
+                Button("Утеряно") { Task { await fileClaim(kind: "loss") } }
+                Button("Отмена", role: .cancel) { claiming = nil }
+            } message: {
+                Text("Претензия попадёт в список мероприятия и в подтему «Претензия».")
             }
         }
         .task { await load() }
@@ -145,43 +162,85 @@ struct EquipChecklistView: View {
         .glass(cornerRadius: Theme.cornerSmall, elevated: false)
     }
 
+    /// Строка позиции.
+    ///
+    /// Галочка и кнопка претензии — две разные кнопки, поэтому вся строка не может
+    /// быть одной большой Button: вложенная в её label кнопка нажатий не получает.
     private func row(_ item: EquipmentDTO) -> some View {
         let on = item.isChecked(kind)
-        return Button {
-            Task { await toggle(item) }
-        } label: {
-            HStack(spacing: Spacing.s) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .stroke(on ? Theme.success.opacity(0.6) : Theme.textSecondary.opacity(0.5), lineWidth: 1)
-                    if on {
+        return HStack(spacing: Spacing.s) {
+            Button {
+                Task { await toggle(item) }
+            } label: {
+                HStack(spacing: Spacing.s) {
+                    ZStack {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Theme.success.opacity(0.18))
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.success)
+                            .stroke(on ? Theme.success.opacity(0.6) : Theme.textSecondary.opacity(0.5), lineWidth: 1)
+                        if on {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Theme.success.opacity(0.18))
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.success)
+                        }
                     }
-                }
-                .frame(width: 20, height: 20)
+                    .frame(width: 20, height: 20)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.qty.map { "\(item.name) · \($0) шт" } ?? item.name)
-                        .font(Typography.callout)
-                        .foregroundStyle(on ? Theme.textSecondary : Theme.textPrimary)
-                        .lineLimit(2)
-                    if let who = item.checkedBy(kind) {
-                        Text("отметил: \(who)").font(.system(size: 9))
-                            .foregroundStyle(Theme.textSecondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.qty.map { "\(item.name) · \($0) шт" } ?? item.name)
+                            .font(Typography.callout)
+                            .foregroundStyle(on ? Theme.textSecondary : Theme.textPrimary)
+                            .lineLimit(2)
+                        if let who = item.checkedBy(kind) {
+                            Text("отметил: \(who)").font(.system(size: 9))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        // Претензия по позиции: на приёмке важно видеть, по чему
+                        // вопрос уже есть, — иначе заводят вторую такую же.
+                        if let claim = item.claimTitle {
+                            Text(claim + (item.claim_note.map { ": \($0)" } ?? ""))
+                                .font(.system(size: 9))
+                                .foregroundStyle(item.claim_status == "closed" ? Theme.textSecondary : Theme.danger)
+                                .lineLimit(2)
+                        }
                     }
+                    Spacer(minLength: Spacing.xs)
                 }
-                Spacer(minLength: Spacing.xs)
-                if busyId == item.id { ProgressView().tint(Theme.accent).scaleEffect(0.7) }
+                .contentShape(Rectangle())
             }
-            .padding(Spacing.s)
-            .glass(cornerRadius: Theme.cornerSmall, elevated: false)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(!canCheck || busyId != nil)
+
+            if canClaim, kind == .returned, !item.hasClaim, busyId == nil {
+                Button { claiming = item } label: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(Theme.warning)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+            }
+            if busyId == item.id { ProgressView().tint(Theme.accent).scaleEffect(0.7) }
         }
-        .buttonStyle(.plain)
-        .disabled(!canCheck || busyId != nil)
+        .padding(Spacing.s)
+        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
+    }
+
+    /// Зафиксировать претензию по позиции из чеклиста приёма.
+    private func fileClaim(kind claimKind: String) async {
+        guard let item = claiming else { return }
+        claiming = nil
+        busyId = item.id
+        defer { busyId = nil }
+        do {
+            try await Backend.eventInfo().createClaim(
+                dealId: dealId,
+                items: [CreateClaimRequest.Item(position: item.name, kind: claimKind,
+                                                note: "", qty: item.qty)])
+            Haptics.success()
+            await load()
+        } catch {
+            errorText = "Не удалось зафиксировать претензию. Это право админа чата, старшего или кладовщика."
+            Haptics.warning()
+        }
     }
 
     private func load() async {

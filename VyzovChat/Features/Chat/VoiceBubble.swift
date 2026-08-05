@@ -25,11 +25,24 @@ struct VoiceBubble: View {
                 VoiceWaveform(seed: attachment.id, progress: player.progress)
                     .frame(height: 26)
 
-                // Длительность до первого запуска неизвестна — сервер её не
-                // присылает, поэтому до старта там прочерк, а не ноль из ниоткуда.
-                Text(player.timeLabel)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: Spacing.xs) {
+                    // Длительность до первого запуска неизвестна — сервер её не
+                    // присылает, поэтому до старта там прочерк, а не ноль из ниоткуда.
+                    Text(player.timeLabel)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer(minLength: 0)
+                    // Ускоренное прослушивание, как в вебе: длинную голосовую
+                    // на ходу проще догнать на 2×, чем слушать целиком.
+                    Button { player.cycleRate() } label: {
+                        Text(player.rateLabel)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(player.rate == 1 ? Theme.textSecondary : Theme.accent)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Theme.panel2, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .frame(width: 170)
         }
@@ -102,9 +115,22 @@ final class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var progress: Double = 0
     @Published private(set) var timeLabel = "--:--"
+    /// Скорость воспроизведения: 1 → 1.5 → 2 по кругу.
+    @Published private(set) var rate: Float = 1
 
     private var player: AVPlayer?
     private var observer: Any?
+
+    var rateLabel: String { rate == 1 ? "1×" : (rate == 1.5 ? "1,5×" : "2×") }
+
+    /// Переключить скорость. `rate` у остановленного плеера запускает
+    /// воспроизведение, поэтому на паузе только запоминаем значение — оно
+    /// применится при следующем «играть».
+    func cycleRate() {
+        rate = rate == 1 ? 1.5 : (rate == 1.5 ? 2 : 1)
+        if isPlaying { player?.rate = rate }
+        Haptics.selection()
+    }
 
     func toggle(_ url: URL) {
         if isPlaying {
@@ -115,6 +141,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         isPlaying = true
         guard player == nil else {
             player?.play()
+            player?.rate = rate
             return
         }
         // Настройка сессии — через общий шлюз и не на главном потоке: сам вызов
@@ -127,6 +154,7 @@ final class AudioPlayer: NSObject, ObservableObject {
             guard isPlaying else { return }   // успели нажать паузу
             makePlayer(url)
             player?.play()
+            player?.rate = rate
         }
     }
 

@@ -209,6 +209,19 @@ final class ChatViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Состав или чья-то роль изменились. Если это наше мероприятие — перечитываем
+        // карточку: сменили роль мне, и кнопки этапов, чеклиста и претензий должны
+        // появиться (или пропасть) сразу, а не после выхода из чата.
+        RealtimeService.shared.membersChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] eventId in
+                Task { @MainActor in
+                    guard let self, eventId == self.chat.dealId else { return }
+                    await self.loadEventMeta()
+                }
+            }
+            .store(in: &cancellables)
+
         // Темы мероприятия изменились (создали/удалили).
         RealtimeService.shared.topicsChanged
             .receive(on: DispatchQueue.main)
@@ -833,12 +846,56 @@ final class ChatViewModel: ObservableObject {
         let url: URL
     }
 
+    /// Фото ВСЕГО мероприятия (`GET /api/events/{id}/images`): по всем темам и
+    /// глубже загруженной ленты. Отбор без этого видел только то, что успели
+    /// подгрузить в открытой теме, — половина съёмки в отчёт просто не попадала.
+    @Published private(set) var eventPhotos: [ReportPhoto] = []
+
+    /// Кандидаты в отчёт: серверный список, а пока он не пришёл — то, что есть
+    /// в ленте (у отбора не должно быть пустого экрана на ровном месте).
     var reportPhotos: [ReportPhoto] {
+        eventPhotos.isEmpty ? feedPhotos : eventPhotos
+    }
+
+    /// Фото из загруженной ленты.
+    private var feedPhotos: [ReportPhoto] {
         messages.compactMap { m in
             guard let att = m.attachments.first, att.isImage, let url = att.remoteURL else { return nil }
             return ReportPhoto(id: m.id, url: url)
         }
     }
+
+    /// Перечитать фото мероприятия. Запрос доступен тем, кто ведёт отбор
+    /// (`canOtbor`), остальным сервер ответит отказом — тогда остаётся лента.
+    func loadEventPhotos() async {
+        guard useRealtime, !chat.isDirect else { return }
+        struct ImagesDTO: Decodable {
+            struct Item: Decodable {
+                let id: Int
+                let media_url: String?
+                let thumb_url: String?
+            }
+            let images: [Item]
+        }
+        guard let dto = try? await APIClient.shared.get("/api/events/\(chat.dealId)/images",
+                                                        as: ImagesDTO.self) else { return }
+        eventPhotos = dto.images.compactMap { item in
+            // Для сетки хватает превью; полный кадр нужен «юридической инфе».
+            guard let raw = item.thumb_url ?? item.media_url,
+                  let url = AppConfig.mediaURL(raw) else { return nil }
+            return ReportPhoto(id: String(item.id), url: url)
+        }
+        fullPhotoURLs = Dictionary(
+            dto.images.compactMap { item -> (String, URL)? in
+                guard let raw = item.media_url, let url = AppConfig.mediaURL(raw) else { return nil }
+                return (String(item.id), url)
+            },
+            uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Полные кадры по id сообщения — для водяного знака в «Юридической инфе»,
+    /// когда самого сообщения в загруженной ленте нет.
+    private var fullPhotoURLs: [String: URL] = [:]
 
     /// Права админа чата, состав участников и кто докуда прочитал.
     ///
@@ -923,13 +980,17 @@ final class ChatViewModel: ObservableObject {
         // появления геометок) — тогда берём текущее местоположение устройства.
         let fallbackGeo = await LocationProvider.shared.current()
 
-        for message in messages where pickedIds.contains(message.id) {
-            guard let att = message.attachments.first, att.isImage, let url = att.remoteURL,
+        // Идём по ОТМЕТКАМ, а не по ленте: отбирать теперь можно и то, что в
+        // загруженную ленту не попало (список фото приходит с сервера целиком).
+        for id in pickedIds.sorted() {
+            let message = messages.first { $0.id == id }
+            let fromFeed = message?.attachments.first(where: { $0.isImage })?.remoteURL
+            guard let url = fromFeed ?? fullPhotoURLs[id],
                   let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data) else { continue }
 
             var geo: (lat: Double, lng: Double)?
-            if let lat = message.geoLat, let lng = message.geoLng {
+            if let lat = message?.geoLat, let lng = message?.geoLng {
                 geo = (lat, lng)
             } else {
                 geo = fallbackGeo
@@ -946,7 +1007,7 @@ final class ChatViewModel: ObservableObject {
             // Имя обязано быть разным: путь в хранилище сервер строит ИЗ ИМЕНИ
             // файла, и все кадры под «legal.jpg» ложились в один и тот же объект —
             // из двух отмеченных фото в папке оставалось одно.
-            try await uploadLegal(payload, fileName: "legal-\(message.id).jpg")
+            try await uploadLegal(payload, fileName: "legal-\(id).jpg")
             sent += 1
         }
         // Чтобы Диск у остальных обновился, не дожидаясь перезахода.

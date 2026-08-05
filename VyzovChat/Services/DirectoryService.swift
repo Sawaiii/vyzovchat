@@ -3,9 +3,27 @@ import Foundation
 /// Справочники сервера: мероприятия, сотрудники, компании.
 /// (Раньше этот слой назывался «Битрикс» — интеграции с ним нет,
 /// все данные приходят из самого Vyzov Chat.)
+/// Кого спрашиваем у `/api/workers`.
+///
+/// По умолчанию сервер отдаёт всех, кроме гостей склада: их зовут на одно
+/// мероприятие по ссылке, и в общем списке (упоминания, пересылка, состав)
+/// они только мешают.
+enum WorkersScope: String {
+    /// Штат — список «Роли и персонал».
+    case staff
+    /// Пришедшие по ссылке: склад и подрядчики.
+    case guests
+    /// Все, кроме гостей склада, — поведение сервера по умолчанию.
+    case `default` = ""
+}
+
 protocol DirectoryServicing {
     func fetchDeals(for user: User) async -> [Deal]
     func fetchColleagues() async -> [User]
+    /// Люди организации с фильтром: штат, гости или всё остальное.
+    func fetchWorkers(scope: WorkersScope) async -> [User]
+    /// Удалить сотрудника (админ; реализатор — только своих). Себя удалить нельзя.
+    func deleteWorker(id: String) async throws
     /// Участники конкретного мероприятия с ролью в составе.
     func members(dealId: String) async -> [User]
     /// Создать мероприятие (только админ). Возвращает id созданного.
@@ -49,6 +67,10 @@ final class MockDirectoryService: DirectoryServicing {
     }
 
     func fetchColleagues() async -> [User] { MockData.allUsers }
+
+    func fetchWorkers(scope: WorkersScope) async -> [User] { MockData.allUsers }
+
+    func deleteWorker(id: String) async throws {}
 
     func members(dealId: String) async -> [User] {
         guard let deal = MockData.deals.first(where: { $0.id == dealId }) else { return [] }

@@ -16,6 +16,11 @@ final class AppSession: ObservableObject {
 
     @Published private(set) var authState: AuthState = .loading
 
+    /// Токен приглашения по ссылке `/join/<token>`, которое надо показать поверх
+    /// всего: и до входа (гость склада вообще не заводит пароля), и после —
+    /// приглашение приходит в переписке в любой момент.
+    @Published var pendingInvite: String?
+
     // MARK: - Сервисы (dependency container)
     let auth: AuthServicing
     let chats: ChatServicing
@@ -49,6 +54,13 @@ final class AppSession: ObservableObject {
     var currentUser: User? {
         if case let .signedIn(user) = authState { return user }
         return nil
+    }
+
+    /// Открыть приглашение по ссылке (deep link или вставленная руками ссылка).
+    func openInvite(rawLink: String) -> Bool {
+        guard let token = InviteLink.token(from: rawLink) else { return false }
+        pendingInvite = token
+        return true
     }
 
     func bootstrap() async {

@@ -14,7 +14,13 @@ struct WorkerEditView: View {
     @State private var pass = ""
     @State private var phone = ""
     @State private var position = ""
-    @State private var isAdmin = false
+    /// Роль в системе. Именно она даёт права: отдельной галочки «администратор»
+    /// на сервере больше нет (миграция 00044) — присланный `is_admin` он игнорирует.
+    @State private var role: SystemRole = .worker
+    /// Куратор «галочкой» — право звать подрядчиков при любой другой роли.
+    @State private var isCurator = false
+    /// Компания реализатора.
+    @State private var companyId: Int?
     @State private var email = ""
     /// Ссылка на текущее фото; ключ нового — отдельно, его ждёт сервер.
     @State private var avatarURL: URL?
@@ -24,6 +30,7 @@ struct WorkerEditView: View {
     @State private var uploading = false
 
     @State private var saving = false
+    @State private var deleting = false
     @State private var errorText: String?
     @State private var companies: [CompanyDTO] = []
     @State private var hiddenCompanies: Set<String> = []
@@ -57,17 +64,13 @@ struct WorkerEditView: View {
                             }
                         }
 
-                        GlassCard {
-                            Toggle(isOn: $isAdmin) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("Администратор").foregroundStyle(Theme.textPrimary)
-                                    Text("Полные права: мероприятия, участники, сотрудники")
-                                        .font(.caption2).foregroundStyle(Theme.textSecondary)
-                                }
-                            }.tint(Theme.accent)
-                        }
+                        roleCard
+
+                        if role.needsCompany { CompanyPicker(selection: $companyId) }
 
                         if !isNew { companyAccessCard }
+
+                        if !isNew && worker?.id != session.currentUser?.id { deleteCard }
 
                         if let errorText { ErrorBanner(text: errorText) }
                     }
@@ -83,6 +86,71 @@ struct WorkerEditView: View {
                 }
             }
             .onAppear(perform: prefill)
+        }
+    }
+
+    /// Роль в системе. Одним списком, а не набором галочек: сервер считает права
+    /// ровно от неё, и две сущности («роль» + «полные права») уже разъезжались.
+    private var roleCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                Text("Роль в системе").font(Typography.headline).foregroundStyle(Theme.textPrimary)
+
+                ForEach(SystemRole.allCases) { item in
+                    Button {
+                        role = item
+                        Haptics.tap()
+                    } label: {
+                        HStack(alignment: .top, spacing: Spacing.s) {
+                            Image(systemName: role == item ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(role == item ? Theme.accent : Theme.textSecondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.title).font(Typography.callout)
+                                    .foregroundStyle(Theme.textPrimary)
+                                Text(item.hint).font(.caption2)
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider().overlay(Theme.textSecondary.opacity(0.2))
+
+                // Куратор бывает и «галочкой» при другой роли — сервер это различает
+                // (is_curator рядом с role), и теги для кураторов видны обоим.
+                Toggle(isOn: $isCurator) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Может звать подрядчиков").foregroundStyle(Theme.textPrimary)
+                        Text("Ссылка-приглашение в мероприятия, где сам состоит")
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.accent)
+                .disabled(role == .curator)
+            }
+        }
+    }
+
+    /// Удаление сотрудника. Себя удалить нельзя — сервер отвечает `cannot_delete_self`,
+    /// поэтому своей карточке кнопку и не показываем.
+    private var deleteCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Button(role: .destructive) { deleting = true } label: {
+                    Label("Удалить сотрудника", systemImage: "trash")
+                        .font(Typography.callout).foregroundStyle(Theme.danger)
+                }
+                Text("Учётная запись пропадёт из справочника; написанное им в чатах останется.")
+                    .font(.caption2).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .confirmationDialog("Удалить сотрудника?", isPresented: $deleting, titleVisibility: .visible) {
+            Button("Удалить", role: .destructive) { Task { await remove() } }
+            Button("Отмена", role: .cancel) {}
         }
     }
 
@@ -155,9 +223,26 @@ struct WorkerEditView: View {
         login = worker.login
         phone = worker.phone
         position = worker.position
-        isAdmin = worker.isAdmin
+        role = SystemRole(worker.globalRole)
+        isCurator = worker.isCurator
+        companyId = worker.companyId
         email = worker.email ?? ""
         avatarURL = worker.avatarURL
+    }
+
+    private func remove() async {
+        guard let worker else { return }
+        saving = true
+        defer { saving = false }
+        do {
+            try await session.directory.deleteWorker(id: worker.id)
+            Haptics.success()
+            onSaved()
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
     }
 
     private func uploadAvatar() {
@@ -186,7 +271,12 @@ struct WorkerEditView: View {
                 // что перечислено в UpdateWorkerRequest.
                 var patch = UpdateWorkerRequest()
                 patch.fio = fioT
-                patch.is_admin = isAdmin
+                // Права считает сервер от роли; is_admin/is_leader он игнорирует.
+                patch.role = role.rawValue
+                patch.is_curator = isCurator || role == .curator
+                // -1 — отвязать компанию: реализатора без компании не бывает,
+                // а у остальных ролей она только мешает.
+                patch.company_id = role.needsCompany ? companyId : -1
                 patch.phone = phone
                 patch.email = email
                 if !pass.isEmpty { patch.pass = pass }
@@ -194,11 +284,19 @@ struct WorkerEditView: View {
                 _ = try await session.directory.updateWorker(id: worker.id, patch)
                 CompanyAccessStore.setHidden(hiddenCompanies, for: worker.id)
             } else {
-                _ = try await session.directory.createWorker(CreateWorkerRequest(
-                    fio: fioT, login: loginT, pass: pass, role: nil,
-                    is_admin: isAdmin, is_leader: false,
+                // Компанию реализатору задаём отдельным PATCH: при создании
+                // сервер её не принимает.
+                let created = try await session.directory.createWorker(CreateWorkerRequest(
+                    fio: fioT, login: loginT, pass: pass, role: role.rawValue,
+                    is_leader: role == .leader,
                     email: email.isEmpty ? nil : email,
                     phone: phone.isEmpty ? nil : phone))
+                if role.needsCompany && companyId != nil || isCurator {
+                    var patch = UpdateWorkerRequest()
+                    if role.needsCompany { patch.company_id = companyId }
+                    if isCurator { patch.is_curator = true }
+                    _ = try? await session.directory.updateWorker(id: created.id, patch)
+                }
             }
             Haptics.success()
             onSaved()

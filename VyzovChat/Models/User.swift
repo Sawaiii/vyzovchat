@@ -33,8 +33,11 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     /// Реализатор — полный доступ к Диску/Фотобанку и к чатам своей компании.
     var isImplementer: Bool { globalRole == "implementer" }
 
-    /// Права уровня админа чата внутри мероприятия (склад приравнен к админу).
-    var isEventAdmin: Bool { eventRole == "admin" || eventRole == "warehouse" }
+    /// Права уровня админа чата внутри мероприятия.
+    ///
+    /// Склад сюда больше не входит: сервер с 4 августа 2026 считает админом чата
+    /// только роль `admin` — кладовщик закрывает свои этапы, но чатом не правит.
+    var isEventAdmin: Bool { eventRole == "admin" }
 
     /// ФИО целиком. Предпочитаем цельное `fio` из API, иначе собираем из частей.
     var fullName: String {

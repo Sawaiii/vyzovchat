@@ -44,6 +44,9 @@ struct ReportView: View {
             }
             .navigationTitle("Отчёт")
             .navigationBarTitleDisplayMode(.inline)
+            // Отбор идёт по фото ВСЕГО мероприятия, а не по загруженной ленте:
+            // список приходит с сервера (все темы, до 500 кадров).
+            .task { await model.loadEventPhotos() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Закрыть") { dismiss() } }
                 if !model.pickedIds.isEmpty {

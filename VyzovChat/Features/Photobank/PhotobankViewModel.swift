@@ -145,6 +145,13 @@ final class PhotobankViewModel: ObservableObject {
         counts = PhotobankCountsDTO(total: counts.total, newCount: max(0, counts.newCount - 1))
     }
 
+    /// Убрать фото из фотобанка. Само сообщение с фото в чате остаётся —
+    /// пропадает только отметка «в фотобанке», и вернуть его можно отбором.
+    func remove(_ item: PhotobankItemDTO) async {
+        await service.remove(itemId: item.id)
+        await reloadFacetsAndItems()
+    }
+
     /// Актуальная версия item из выборки (после reload тегов).
     func current(_ item: PhotobankItemDTO) -> PhotobankItemDTO {
         items.first { $0.id == item.id } ?? item

@@ -284,7 +284,8 @@ struct ChatView: View {
             EquipChecklistView(dealId: model.chat.dealId,
                                kind: kind,
                                canCheck: model.canCheckEquipment,
-                               canEdit: model.canEditEquipment) {
+                               canEdit: model.canEditEquipment,
+                               canClaim: model.canClaims) {
                 Task { await model.loadStages() }
             }
         }

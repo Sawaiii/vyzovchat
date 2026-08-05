@@ -19,8 +19,13 @@ final class RealDirectoryService: DirectoryServicing {
     }
 
     func fetchColleagues() async -> [User] {
+        await fetchWorkers(scope: .default)
+    }
+
+    func fetchWorkers(scope: WorkersScope) async -> [User] {
+        let path = scope == .default ? "/api/workers" : "/api/workers?scope=\(scope.rawValue)"
         do {
-            let dtos = try await APIClient.shared.get("/api/workers", as: [WorkerDTO].self)
+            let dtos = try await APIClient.shared.get(path, as: [WorkerDTO].self)
             return dtos.map(User.init(dto:))
         } catch {
             return []
@@ -115,5 +120,10 @@ final class RealDirectoryService: DirectoryServicing {
         let dto = try await APIClient.shared.patch("/api/workers/\(id)", json: req, as: WorkerDTO.self)
         await MainActor.run { DirectoryCache.invalidate() }
         return User(dto: dto)
+    }
+
+    func deleteWorker(id: String) async throws {
+        _ = try await APIClient.shared.delete("/api/workers/\(id)", as: OKDTO.self)
+        await MainActor.run { DirectoryCache.invalidate() }
     }
 }

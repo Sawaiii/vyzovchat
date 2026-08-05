@@ -34,6 +34,15 @@ struct Chat: Identifiable, Codable, Equatable, Hashable {
 
     /// Я админ этого чата: показывать ли правки мероприятия, состав, темы.
     var isChatAdmin: Bool = false
+    /// Моя роль в составе мероприятия (`my_role`) — из списка мероприятий.
+    var myRole: String? = nil
+
+    /// Плашка своей роли в списке чатов: «участника» не рисуем — это шум.
+    var myRoleChip: EventRole? {
+        guard !isDirect, let raw = myRole, !raw.isEmpty else { return nil }
+        let role = EventRole(raw)
+        return role.showsChip ? role : nil
+    }
     /// Метки мероприятия из словаря организации.
     var tags: [ChatTag] = []
     var needsPhoto: Bool = false       // ждём фото с мероприятия

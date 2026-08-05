@@ -78,12 +78,13 @@ struct MemberDTO: Decodable, Identifiable {
     let position: String?
 }
 
+/// `POST /api/workers`. Поля `is_admin` в теле больше нет: с миграции 00044
+/// полные права даёт только роль (`owner`/`leader`), сервер считает их сам.
 struct CreateWorkerRequest: Encodable {
     let fio: String
     let login: String
     let pass: String
     let role: String?
-    let is_admin: Bool
     let is_leader: Bool
     let email: String?
     let phone: String?
@@ -93,9 +94,8 @@ struct CreateWorkerRequest: Encodable {
 /// Отдельного `PATCH /api/me` на сервере нет: свою карточку правим этим же путём.
 struct UpdateWorkerRequest: Encodable {
     var fio: String?
+    /// Ведущее поле: от роли сервер считает и `is_admin`, и стартовую страницу.
     var role: String?
-    var is_admin: Bool?
-    var is_leader: Bool?
     var is_curator: Bool?
     var pass: String?
     var company_id: Int?     // -1 = отвязать компанию
@@ -143,6 +143,9 @@ struct EventDTO: Decodable {
     let members_count: Int?
     /// Я админ этого чата — по нему интерфейс решает, показывать ли правки.
     let my_chat_admin: Bool?
+    /// Моя роль в составе: admin | senior | member | observer | storekeeper.
+    /// Пусто — меня в составе нет (так админ видит чужие мероприятия).
+    let my_role: String?
 }
 
 /// `GET /api/events/{id}` — состав, смены и мои права в этом чате.
@@ -273,6 +276,10 @@ struct EquipmentDTO: Decodable, Identifiable {
     let loaded_by: String?
     let returned_at: String?
     let returned_by: String?
+    /// Есть ли претензия по этой позиции: filed | sent | closed. Пусто — претензии нет.
+    let claim_status: String?
+    /// Чем закончилась, если урегулирована.
+    let claim_note: String?
 
     /// Отмечена ли позиция в чеклисте нужного вида.
     func isChecked(_ kind: EquipCheckKind) -> Bool {
@@ -283,6 +290,20 @@ struct EquipmentDTO: Decodable, Identifiable {
     func checkedBy(_ kind: EquipCheckKind) -> String? {
         let who = kind == .loaded ? loaded_by : returned_by
         return (who?.isEmpty == false) ? who : nil
+    }
+
+    /// Заведена ли по позиции претензия — рисуем прямо в чеклисте, чтобы
+    /// кладовщик видел, по чему уже есть вопрос, и не заводил вторую.
+    var hasClaim: Bool { !(claim_status ?? "").isEmpty }
+
+    /// Подпись претензии рядом с позицией.
+    var claimTitle: String? {
+        switch claim_status {
+        case "closed": return "претензия урегулирована"
+        case "sent":   return "претензия в CRM"
+        case "filed", "open": return "претензия"
+        default:       return nil
+        }
     }
 }
 
@@ -354,12 +375,16 @@ struct ClaimItemDTO: Decodable, Identifiable {
 
 struct ClaimDTO: Decodable, Identifiable {
     let id: Int
-    /// open | sent | closed
+    /// filed | sent | closed
     let status: String
     let created_at: String?
     let author_fio: String?
     let author_role: String?
     let items: [ClaimItemDTO]?
+    /// Чем закончилось — сервер хранит комментарий урегулирования у самой претензии.
+    let settled_note: String?
+    let settled_fio: String?
+    let settled_at: String?
 
     var isOpen: Bool { status != "closed" }
     var statusTitle: String {
@@ -370,6 +395,9 @@ struct ClaimDTO: Decodable, Identifiable {
         }
     }
 }
+
+/// `POST /api/claims/{id}/close` — комментарий обязателен, пустой сервер не примет.
+struct CloseClaimRequest: Encodable { let note: String }
 
 struct CreateClaimRequest: Encodable {
     struct Item: Encodable {
@@ -467,6 +495,50 @@ struct InviteDTO: Decodable {
 }
 
 struct CreateInviteRequest: Encodable { let role: String }
+
+/// `GET /api/invite/{token}` — что за приглашение (публично, токен не нужен).
+struct InviteInfoDTO: Decodable {
+    let ok: Bool?
+    let event_id: Int
+    let event_name: String?
+    /// member (подрядчик) | storekeeper (склад).
+    let role: String
+    /// Я уже в этом мероприятии — форма имени не нужна, иначе гость упрётся
+    /// в «имя занято» самим собой.
+    let member: Bool?
+}
+
+/// `POST /api/invite/{token}/accept`.
+///
+/// Три случая в одном теле: гость склада (только `fio`), вход существующим
+/// аккаунтом (`mode: login`) и регистрация подрядчика (`mode: register`).
+struct AcceptInviteRequest: Encodable {
+    var mode: String?
+    var fio: String?
+    var phone: String?
+    var email: String?
+    var login: String?
+    var pass: String?
+
+    static func guest(fio: String) -> AcceptInviteRequest {
+        AcceptInviteRequest(fio: fio)
+    }
+    static func login(login: String, pass: String) -> AcceptInviteRequest {
+        AcceptInviteRequest(mode: "login", login: login, pass: pass)
+    }
+    static func register(fio: String, phone: String, email: String,
+                         login: String, pass: String) -> AcceptInviteRequest {
+        AcceptInviteRequest(mode: "register", fio: fio, phone: phone,
+                            email: email, login: login, pass: pass)
+    }
+}
+
+/// Ответ приёма приглашения: карточка, токен и мероприятие, куда добавили.
+struct AcceptInviteResponseDTO: Decodable {
+    let worker: WorkerDTO
+    let token: String
+    let event_id: Int?
+}
 
 // MARK: - Сброс пароля
 
@@ -792,6 +864,7 @@ extension Deal {
         self.rawStatus = dto.status ?? "active"
         self.reportStatus = dto.report_status ?? "none"
         self.company = companyName
+        self.myRole = dto.my_role
     }
 }
 
@@ -818,6 +891,7 @@ extension Chat {
         self.startsAt = DateParse.iso(event.starts_at)
         self.endsAt = DateParse.iso(event.ends_at)
         self.isChatAdmin = event.my_chat_admin ?? false
+        self.myRole = event.my_role
         self.tags = (event.tags ?? []).map { ChatTag(name: $0.name, colorHex: $0.color) }
         self.needsPhoto = event.needs_photo ?? false
         self.needsReport = event.needs_report ?? false

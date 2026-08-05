@@ -14,6 +14,16 @@ struct Deal: Identifiable, Codable, Equatable, Hashable {
     var rawStatus: String = "active"    // active | closed
     var reportStatus: String = "none"   // none | sent
     var company: String? = nil          // компания/бренд (events.folder)
+    /// Моя роль в составе (`my_role`): по ней в списке видно «вы старший».
+    /// Пусто — меня в составе нет.
+    var myRole: String? = nil
+
+    /// Плашка своей роли в списке: «участника» не рисуем — это шум.
+    var myRoleChip: EventRole? {
+        guard let raw = myRole, !raw.isEmpty else { return nil }
+        let role = EventRole(raw)
+        return role.showsChip ? role : nil
+    }
 
     /// Статусы для отображения бейджами.
     var statusBadges: [(text: String, kind: StatusKind)] {

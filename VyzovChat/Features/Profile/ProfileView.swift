@@ -1,12 +1,24 @@
 import SwiftUI
 import PhotosUI
 
+/// Ссылка привязки Яндекса. Обёртка нужна `sheet(item:)` — URL не Identifiable.
+struct YandexLinkTarget: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 struct ProfileView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.adaptiveMetrics) private var metrics
     @State private var avatarPick: PhotosPickerItem?
     @State private var uploadingAvatar = false
     @State private var showWorkers = false
+
+    // Привязка Яндекса
+    @State private var yandexLinked = false
+    @State private var yandexBusy = false
+    @State private var yandexNote: String?
+    @State private var yandexLinkURL: YandexLinkTarget?
 
     var body: some View {
         NavigationStack {
@@ -20,6 +32,7 @@ struct ProfileView: View {
                             infoCard(user)
                         }
                         if session.currentUser?.isAdmin == true { adminCard }
+                        yandexCard
                         settingsCard
                         signOutButton
                     }
@@ -117,6 +130,84 @@ struct ProfileView: View {
         .buttonStyle(PressableStyle())
         .sheet(isPresented: $showWorkers) {
             WorkersView().environmentObject(session)
+        }
+    }
+
+    /// Яндекс: привязать вход к своей учётке или отвязать.
+    ///
+    /// Привязанный Яндекс — это способ войти без пароля, поэтому состояние
+    /// спрашиваем у сервера (`yandex_linked` есть только в карточке одного
+    /// человека), а не выводим из чего-то местного.
+    private var yandexCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                HStack(spacing: Spacing.s) {
+                    Image(systemName: "person.badge.key.fill")
+                        .foregroundStyle(Theme.accent).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Вход через Яндекс").font(Typography.callout)
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(yandexLinked ? "Привязан" : "Не привязан")
+                            .font(.caption2).foregroundStyle(yandexLinked ? Theme.success : Theme.textSecondary)
+                    }
+                    Spacer()
+                    if yandexBusy {
+                        ProgressView().tint(Theme.accent)
+                    } else {
+                        Button(yandexLinked ? "Отвязать" : "Привязать") {
+                            Task { yandexLinked ? await unlinkYandex() : await startLinkYandex() }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(yandexLinked ? Theme.danger : Theme.accent)
+                    }
+                }
+                if let yandexNote {
+                    Text(yandexNote).font(.caption2).foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+        .task { await refreshYandex() }
+        .sheet(item: $yandexLinkURL) { item in
+            YandexLinkView(url: item.url) { result in
+                switch result {
+                case "linked": yandexNote = "Яндекс привязан — теперь им можно входить."
+                case "taken":  yandexNote = "Этот Яндекс уже привязан к другому сотруднику."
+                default:       yandexNote = "Привязать не получилось. Попробуйте ещё раз."
+                }
+                Task { await refreshYandex() }
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshYandex() async {
+        guard let id = session.currentUser?.id, !AppConfig.useMockData else { return }
+        yandexLinked = await YandexAccount.isLinked(workerId: id)
+    }
+
+    @MainActor
+    private func startLinkYandex() async {
+        yandexBusy = true
+        yandexNote = nil
+        defer { yandexBusy = false }
+        do {
+            yandexLinkURL = YandexLinkTarget(url: try await YandexAccount.linkURL())
+        } catch {
+            yandexNote = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func unlinkYandex() async {
+        guard let id = session.currentUser?.id else { return }
+        yandexBusy = true
+        defer { yandexBusy = false }
+        do {
+            try await YandexAccount.unlink(workerId: id)
+            yandexLinked = false
+            yandexNote = "Яндекс отвязан. Вход остаётся по логину и паролю."
+        } catch {
+            yandexNote = error.localizedDescription
         }
     }
 

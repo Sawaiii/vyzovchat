@@ -26,6 +26,10 @@ struct EventDocumentsView: View {
     /// Какой вид документа сейчас выбираем файлом.
     @State private var importingFor: String?
 
+    // Действия над всеми документами разом
+    @State private var bulkBusy = false
+    @State private var bulkResult: String?
+
     private func document(of type: String) -> DocumentDTO? {
         documents.first { $0.type == type }
     }
@@ -46,6 +50,7 @@ struct EventDocumentsView: View {
                             actCard("Акт приёма", type: "act_accept")
                             actCard("Акт возврата", type: "act_return")
                             othersSection
+                            if isChatAdmin && !documents.isEmpty { bulkActions }
                             if isChatAdmin { addForm }
                         }
                         .padding(.horizontal, metrics.horizontalPadding)
@@ -162,6 +167,33 @@ struct EventDocumentsView: View {
         }
     }
 
+    /// Действия сразу над всеми документами — как в вебе: по одному отмечать
+    /// десяток актов и потом ещё раскладывать их по Диску никто не станет.
+    private var bulkActions: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                Text("Все документы").font(Typography.headline).foregroundStyle(Theme.textPrimary)
+                HStack(spacing: Spacing.s) {
+                    Button(bulkBusy ? "Отправляем…" : "Все в Tony") { Task { await allToTony() } }
+                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Theme.panel2, in: Capsule())
+                    Button(bulkBusy ? "Копируем…" : "Сложить на Диск") { Task { await allToDisk() } }
+                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Theme.panel2, in: Capsule())
+                    Spacer()
+                }
+                .disabled(bulkBusy)
+                if let bulkResult {
+                    Text(bulkResult).font(.caption2).foregroundStyle(Theme.success)
+                }
+                Text("На Диск копируются только документы с файлом — папка мероприятия, раздел «Документы».")
+                    .font(.caption2).foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
     private var addForm: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: Spacing.s) {
@@ -241,6 +273,35 @@ struct EventDocumentsView: View {
                 type: type, title: title, key: key, name: name, size: size, body: note))
             Haptics.success()
             await load()
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
+    }
+
+    private func allToTony() async {
+        bulkBusy = true
+        bulkResult = nil
+        defer { bulkBusy = false }
+        do {
+            let count = try await session.eventInfo.sendAllDocumentsToTony(dealId: dealId)
+            bulkResult = count > 0 ? "Отправлено документов: \(count)" : "Всё уже было отправлено."
+            Haptics.success()
+            await load()
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
+    }
+
+    private func allToDisk() async {
+        bulkBusy = true
+        bulkResult = nil
+        defer { bulkBusy = false }
+        do {
+            let count = try await session.eventInfo.documentsToDisk(dealId: dealId)
+            bulkResult = count > 0 ? "Скопировано на Диск: \(count)" : "Копировать нечего: у документов нет файлов."
+            Haptics.success()
         } catch {
             errorText = error.localizedDescription
             Haptics.warning()
