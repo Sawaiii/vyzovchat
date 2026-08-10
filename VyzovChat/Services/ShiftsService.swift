@@ -16,6 +16,15 @@ protocol ShiftsServicing {
     /// админ не на месте сотрудника.
     func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO
     func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO
+
+    // Правки задним числом — только руководству (`me_rights.shift_cancel`).
+    /// Убрать смену целиком: открыли по ошибке или не тому человеку.
+    func cancelShift(dealId: String, workerId: String) async throws
+    /// Снять завершение: человек вернулся на площадку.
+    func reopenShift(dealId: String, workerId: String) async throws -> CheckinDTO
+    /// Проставить время смены руками. nil-поле не трогаем.
+    func setShiftTimes(dealId: String, workerId: String,
+                       checkedAt: Date?, finishedAt: Date?) async throws -> CheckinDTO
 }
 
 /// Ошибки смены с понятным человеку текстом.
@@ -77,6 +86,38 @@ final class RealShiftsService: ShiftsServicing {
         try await post("/api/events/\(dealId)/members/\(workerId)/checkout", body: EmptyBody())
     }
 
+    func cancelShift(dealId: String, workerId: String) async throws {
+        do {
+            _ = try await APIClient.shared.delete("/api/events/\(dealId)/members/\(workerId)/checkin",
+                                                  as: OKDTO.self)
+        } catch {
+            throw ShiftError.from(error)
+        }
+    }
+
+    func reopenShift(dealId: String, workerId: String) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/members/\(workerId)/reopen", body: EmptyBody())
+    }
+
+    func setShiftTimes(dealId: String, workerId: String,
+                       checkedAt: Date?, finishedAt: Date?) async throws -> CheckinDTO {
+        // Время шлём в ISO-8601 с зоной: сервер разбирает его как time.Time,
+        // а «просто HH:mm» превратилось бы в чужой часовой пояс.
+        struct TimesRequest: Encodable {
+            let checked_at: String?
+            let finished_at: String?
+        }
+        let iso = ISO8601DateFormatter()
+        let body = TimesRequest(checked_at: checkedAt.map(iso.string(from:)),
+                                finished_at: finishedAt.map(iso.string(from:)))
+        do {
+            return try await APIClient.shared.patch("/api/events/\(dealId)/members/\(workerId)/checkin",
+                                                     json: body, as: CheckinDTO.self)
+        } catch {
+            throw ShiftError.from(error)
+        }
+    }
+
     private func post(_ path: String, body: Encodable) async throws -> CheckinDTO {
         do {
             return try await APIClient.shared.post(path, json: body, as: CheckinDTO.self)
@@ -92,4 +133,10 @@ final class MockShiftsService: ShiftsServicing {
     func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO { throw ShiftError.geoUnavailable }
     func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }
     func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }
+    func cancelShift(dealId: String, workerId: String) async throws {}
+    func reopenShift(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notCheckedIn }
+    func setShiftTimes(dealId: String, workerId: String,
+                       checkedAt: Date?, finishedAt: Date?) async throws -> CheckinDTO {
+        throw ShiftError.notCheckedIn
+    }
 }

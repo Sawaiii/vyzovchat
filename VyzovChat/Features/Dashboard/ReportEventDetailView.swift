@@ -178,6 +178,8 @@ struct ReportEventDetailView: View {
         var parts: [String] = []
         if let opened = checkin.opened_by, !opened.isEmpty { parts.append("открыл: \(opened)") }
         if let closed = checkin.closed_by, !closed.isEmpty { parts.append("закрыл: \(closed)") }
+        // …и правка времени задним числом: в отчёте она должна быть видна.
+        if let edit = checkin.editNote { parts.append(edit) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

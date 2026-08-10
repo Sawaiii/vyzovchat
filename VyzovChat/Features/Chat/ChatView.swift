@@ -22,6 +22,8 @@ struct ChatView: View {
     @State private var showFileImporter = false
     @State private var mediaPreview: MediaPreview?
     @State private var profileUser: User?
+    /// Сообщение, по которому смотрим список ознакомившихся.
+    @State private var ackMessageId: AckTarget?
     @State private var scrollTarget: String?
     @State private var highlightedId: String?
     /// Доводка прокрутки к сообщению — держим, чтобы прервать её, как только
@@ -303,8 +305,12 @@ struct ChatView: View {
             EventShiftsView(dealId: model.chat.dealId,
                             eventTitle: model.chat.title,
                             isChatAdmin: model.isChatAdmin,
-                            canCheckin: model.canCheckin)
+                            canCheckin: model.canCheckin,
+                            canEditShifts: model.canEditShifts)
                 .environmentObject(session)
+        }
+        .sheet(item: $ackMessageId) { target in
+            AckListView(messageId: target.id) { await model.ackList(messageId: $0) }
         }
         .sheet(isPresented: $showMembers) {
             // Управление участниками — только глобальный админ.
@@ -688,7 +694,10 @@ struct ChatView: View {
             onReact: { emoji in model.toggleReaction(message, emoji: emoji) },
             onOpenProfile: { id in profileUser = model.user(for: id) },
             onOpenMedia: { att in openMedia(att) },
-            onOpenReply: { rid in scrollTarget = rid }
+            onOpenReply: { rid in scrollTarget = rid },
+            canAck: model.canAck,
+            onAck: { Task { await model.ack(message) } },
+            onShowAcks: { ackMessageId = AckTarget(id: message.id) }
         )
         .scaleEffect(pressScale(message), anchor: model.isMine(message) ? .trailing : .leading)
         .background(

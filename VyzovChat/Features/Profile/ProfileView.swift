@@ -13,6 +13,7 @@ struct ProfileView: View {
     @State private var avatarPick: PhotosPickerItem?
     @State private var uploadingAvatar = false
     @State private var showWorkers = false
+    @State private var showAudit = false
 
     // Привязка Яндекса
     @State private var yandexLinked = false
@@ -114,12 +115,27 @@ struct ProfileView: View {
         }
     }
 
-    /// Админский раздел — управление сотрудниками.
+    /// Админские разделы — сотрудники и журнал действий.
     private var adminCard: some View {
-        Button { showWorkers = true } label: {
+        VStack(spacing: Spacing.s) {
+            adminRow(title: "Сотрудники", icon: "person.3.fill") { showWorkers = true }
+            // Журнал: кто что удалил. Нужен ровно тогда, когда «оно само
+            // пропало», — и отвечает на это одним экраном.
+            adminRow(title: "Журнал действий", icon: "list.bullet.rectangle") { showAudit = true }
+        }
+        .sheet(isPresented: $showWorkers) {
+            WorkersView().environmentObject(session)
+        }
+        .sheet(isPresented: $showAudit) {
+            AuditLogView()
+        }
+    }
+
+    private func adminRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: Spacing.s) {
-                Image(systemName: "person.3.fill").foregroundStyle(Theme.accent).frame(width: 24)
-                Text("Сотрудники").font(Typography.callout).foregroundStyle(Theme.textPrimary)
+                Image(systemName: icon).foregroundStyle(Theme.accent).frame(width: 24)
+                Text(title).font(Typography.callout).foregroundStyle(Theme.textPrimary)
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
             }
@@ -128,9 +144,6 @@ struct ProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
-        .sheet(isPresented: $showWorkers) {
-            WorkersView().environmentObject(session)
-        }
     }
 
     /// Яндекс: привязать вход к своей учётке или отвязать.

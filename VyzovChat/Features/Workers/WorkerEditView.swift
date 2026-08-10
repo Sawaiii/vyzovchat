@@ -19,8 +19,12 @@ struct WorkerEditView: View {
     @State private var role: SystemRole = .worker
     /// Куратор «галочкой» — право звать подрядчиков при любой другой роли.
     @State private var isCurator = false
-    /// Компания реализатора.
+    /// Основная компания.
     @State private var companyId: Int?
+    /// Набор компаний реализатора: одной ему мало — в CRM она проставлена не у всех.
+    @State private var companyIds: Set<Int> = []
+    /// Уволен: пропадает из списков и не может войти, история остаётся.
+    @State private var archived = false
     @State private var email = ""
     /// Ссылка на текущее фото; ключ нового — отдельно, его ждёт сервер.
     @State private var avatarURL: URL?
@@ -66,11 +70,13 @@ struct WorkerEditView: View {
 
                         roleCard
 
-                        if role.needsCompany { CompanyPicker(selection: $companyId) }
+                        CompanyPicker(selection: $companyId)
+
+                        if role.needsCompany && !isNew { companiesCard }
 
                         if !isNew { companyAccessCard }
 
-                        if !isNew && worker?.id != session.currentUser?.id { deleteCard }
+                        if !isNew && worker?.id != session.currentUser?.id { dismissCard }
 
                         if let errorText { ErrorBanner(text: errorText) }
                     }
@@ -135,16 +141,50 @@ struct WorkerEditView: View {
         }
     }
 
-    /// Удаление сотрудника. Себя удалить нельзя — сервер отвечает `cannot_delete_self`,
-    /// поэтому своей карточке кнопку и не показываем.
-    private var deleteCard: some View {
+    /// Какие компании ведёт реализатор. Набором, а не одной: у большинства
+    /// мероприятий компания в CRM не проставлена, а вести можно несколько.
+    private var companiesCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Button(role: .destructive) { deleting = true } label: {
-                    Label("Удалить сотрудника", systemImage: "trash")
-                        .font(Typography.callout).foregroundStyle(Theme.danger)
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                Text("Ведёт компании").font(Typography.headline).foregroundStyle(Theme.textPrimary)
+                ForEach(companies) { company in
+                    Toggle(isOn: Binding(
+                        get: { companyIds.contains(company.id) },
+                        set: { on in
+                            if on { companyIds.insert(company.id) } else { companyIds.remove(company.id) }
+                        }
+                    )) {
+                        CompanyBadge(name: company.name, compact: false)
+                    }
+                    .tint(Theme.accent)
                 }
-                Text("Учётная запись пропадёт из справочника; написанное им в чатах останется.")
+                Text("Чаты этих компаний он видит целиком и админит их — как свои.")
+                    .font(.caption2).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .task { if companies.isEmpty { companies = await session.directory.fetchCompanies() } }
+    }
+
+    /// Увольнение и удаление. Обычный путь — «Уволить»: человек пропадает из
+    /// списков и не может войти, но его отметки, смены и сообщения остаются на
+    /// месте. Удаление насовсем оставлено рядом — для ошибочно заведённых.
+    private var dismissCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                Toggle(isOn: $archived) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Уволен").foregroundStyle(Theme.textPrimary)
+                        Text("Не входит в систему и не показывается в списках")
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.danger)
+
+                Button(role: .destructive) { deleting = true } label: {
+                    Label("Удалить насовсем", systemImage: "trash")
+                        .font(.caption).foregroundStyle(Theme.danger)
+                }
+                Text("Удаление — для ошибочно заведённых учёток. Уволенного лучше оставить в архиве: за ним история смен и переписки.")
                     .font(.caption2).foregroundStyle(Theme.textSecondary)
             }
         }
@@ -226,6 +266,8 @@ struct WorkerEditView: View {
         role = SystemRole(worker.globalRole)
         isCurator = worker.isCurator
         companyId = worker.companyId
+        companyIds = Set(worker.companyIds)
+        archived = worker.isArchived
         email = worker.email ?? ""
         avatarURL = worker.avatarURL
     }
@@ -274,9 +316,12 @@ struct WorkerEditView: View {
                 // Права считает сервер от роли; is_admin/is_leader он игнорирует.
                 patch.role = role.rawValue
                 patch.is_curator = isCurator || role == .curator
-                // -1 — отвязать компанию: реализатора без компании не бывает,
-                // а у остальных ролей она только мешает.
-                patch.company_id = role.needsCompany ? companyId : -1
+                // -1 — отвязать компанию (сервер понимает это именно так).
+                patch.company_id = companyId ?? -1
+                // Набор компаний имеет смысл только у реализатора; у остальных
+                // ролей его чистим, чтобы не оставлять права «про запас».
+                patch.company_ids = role.needsCompany ? Array(companyIds) : []
+                patch.archived = archived
                 patch.phone = phone
                 patch.email = email
                 if !pass.isEmpty { patch.pass = pass }
@@ -284,17 +329,18 @@ struct WorkerEditView: View {
                 _ = try await session.directory.updateWorker(id: worker.id, patch)
                 CompanyAccessStore.setHidden(hiddenCompanies, for: worker.id)
             } else {
-                // Компанию реализатору задаём отдельным PATCH: при создании
-                // сервер её не принимает.
+                // Компанию сервер принимает сразу; набор компаний реализатора
+                // и галочку куратора — только правкой, отдельным запросом.
                 let created = try await session.directory.createWorker(CreateWorkerRequest(
                     fio: fioT, login: loginT, pass: pass, role: role.rawValue,
                     is_leader: role == .leader,
                     email: email.isEmpty ? nil : email,
-                    phone: phone.isEmpty ? nil : phone))
-                if role.needsCompany && companyId != nil || isCurator {
+                    phone: phone.isEmpty ? nil : phone,
+                    company_id: companyId))
+                if isCurator || (role.needsCompany && !companyIds.isEmpty) {
                     var patch = UpdateWorkerRequest()
-                    if role.needsCompany { patch.company_id = companyId }
                     if isCurator { patch.is_curator = true }
+                    if role.needsCompany { patch.company_ids = Array(companyIds) }
                     _ = try? await session.directory.updateWorker(id: created.id, patch)
                 }
             }

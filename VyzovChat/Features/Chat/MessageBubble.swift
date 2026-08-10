@@ -31,11 +31,17 @@ struct MessageBubble: View {
     var onEdit: () -> Void = {}
     var onForward: () -> Void = {}
     var onOpenReply: (String) -> Void = { _ in }
+    /// Мне положено отмечаться «ознакомлен» (участник и старший).
+    var canAck: Bool = false
+    var onAck: () -> Void = {}
+    var onShowAcks: () -> Void = {}
 
     private var displayName: String { message.senderName ?? sender?.shortName ?? "—" }
 
     var body: some View {
-        if message.isSystem {
+        if message.isNotice {
+            noticeCard
+        } else if message.isSystem {
             systemBubble
         } else {
             HStack(alignment: .bottom, spacing: Spacing.xs) {
@@ -413,6 +419,71 @@ struct MessageBubble: View {
         case "member_role":               return (Theme.textSecondary, "person.crop.circle.badge.checkmark")
         default:             return (Theme.textSecondary, "info.circle")
         }
+    }
+
+    /// Врезка «вводные из сделки» и «важное».
+    ///
+    /// Не пузырь: это уведомление, а не реплика. У вводных автора нет вовсе
+    /// (в базе им числится создатель чата), у важного он виден — по объявлению
+    /// задают вопросы. Внизу — отметка «Ознакомлен» и счётчик отметившихся.
+    private var noticeCard: some View {
+        let tint = message.isAlarm ? Theme.warning : Theme.accent
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: 6) {
+                Image(systemName: message.isAlarm ? "exclamationmark.triangle.fill" : "doc.text.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(message.isAlarm ? "Важное" : "Вводные из сделки")
+                    .font(.system(size: 11, weight: .semibold))
+                if message.isAlarm, let author = message.senderName, !author.isEmpty {
+                    Text("· " + author).font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(tint)
+
+            Text(message.text ?? "")
+                .font(Typography.callout)
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if message.needsAck {
+                HStack(spacing: Spacing.s) {
+                    if canAck && !message.ackMe {
+                        Button("Ознакомлен") { onAck() }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.textOnAccent)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(tint, in: Capsule())
+                    } else if message.ackMe {
+                        Label("вы ознакомились", systemImage: "checkmark.circle.fill")
+                            .font(.caption2).foregroundStyle(Theme.success)
+                    }
+                    Spacer(minLength: 0)
+                    Button { onShowAcks() } label: {
+                        Text(ackCountText)
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(Spacing.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                .stroke(tint.opacity(0.35), lineWidth: 0.5)
+        )
+        .padding(.vertical, Spacing.xs)
+    }
+
+    /// «ознакомились 1 из 4» — одинокая цифра ни о чём не говорит.
+    private var ackCountText: String {
+        message.ackTotal > 0
+            ? "ознакомились \(message.ackCount) из \(message.ackTotal)"
+            : "ознакомились \(message.ackCount)"
     }
 
     private var systemBubble: some View {

@@ -25,6 +25,10 @@ struct ChatInputBar: View {
     @State private var isLocked = false
     @State private var isPaused = false
 
+    // Важное объявление
+    @State private var confirmAlarm = false
+    @State private var alarmError: String?
+
     /// Идёт запись или её вот-вот начнут — поле ввода уступает место счётчику.
     private var isRecordingUI: Bool { isPressingMic || isRecording }
 
@@ -61,6 +65,20 @@ struct ChatInputBar: View {
         .onAppear {
             model.recorder.onLimitReached = { finish() }
         }
+        // Спрашиваем перед отправкой: важное уходит пушем всем и требует от
+        // каждого отметки — отменить это потом уже нельзя.
+        .confirmationDialog("Отправить как важное?", isPresented: $confirmAlarm, titleVisibility: .visible) {
+            Button("Отправить") { Task { await sendAlarm() } }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Объявление придёт всем уведомлением, а под ним появится отметка «Ознакомлен».")
+        }
+        .alert("Важное", isPresented: .init(get: { alarmError != nil },
+                                            set: { if !$0 { alarmError = nil } })) {
+            Button("Понятно", role: .cancel) { alarmError = nil }
+        } message: {
+            Text(alarmError ?? "")
+        }
     }
 
     private var textField: some View {
@@ -68,6 +86,15 @@ struct ChatInputBar: View {
             Menu {
                 Button { showPhotoPicker = true } label: { Label("Фото и видео", systemImage: "photo.on.rectangle") }
                 Button { showFileImporter = true } label: { Label("Файл", systemImage: "doc") }
+                // Важное объявление: тот же текст, но врезкой, с пушем и отметкой
+                // «Ознакомлен». Обычным сообщением такое тонет в переписке.
+                if model.canAlarm && !model.chat.isDirect {
+                    Divider()
+                    Button { confirmAlarm = true } label: {
+                        Label("Отправить как важное", systemImage: "exclamationmark.triangle")
+                    }
+                    .disabled(!hasDraft)
+                }
             } label: {
                 Image(systemName: "paperclip").font(.title3).foregroundStyle(Theme.accent)
                     .frame(width: 40, height: 40)
@@ -80,6 +107,17 @@ struct ChatInputBar: View {
 
             // Место под правую кнопку: сама она нарисована поверх строки.
             Color.clear.frame(width: 40, height: 40)
+        }
+    }
+
+    @MainActor
+    private func sendAlarm() async {
+        do {
+            try await model.sendAlarm(model.draft)
+            Haptics.success()
+        } catch {
+            alarmError = "Не удалось отправить важное. " + error.localizedDescription
+            Haptics.warning()
         }
     }
 

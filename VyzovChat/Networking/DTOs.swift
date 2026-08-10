@@ -60,7 +60,12 @@ struct WorkerDTO: Decodable {
     /// готовые ссылки приходят одной картой из `GET /api/avatars`.
     let avatar: String?
     let company_id: Int?
+    /// Компании, чьи чаты ведёт реализатор: их он отмечает сам в своей карточке.
+    /// Одной компании ему мало — в CRM она проставлена не у всех.
+    let company_ids: [Int]?
     let last_seen: String?
+    /// Уволен: в списках не показывается и войти не может, история цела.
+    let archived_at: String?
     /// Привязан ли Яндекс-аккаунт — только в `GET /api/workers/{id}`.
     let yandex_linked: Bool?
 
@@ -88,6 +93,8 @@ struct CreateWorkerRequest: Encodable {
     let is_leader: Bool
     let email: String?
     let phone: String?
+    /// Основная компания — сервер принимает её сразу при заведении.
+    var company_id: Int? = nil
 }
 
 /// `PATCH /api/workers/{id}` — все поля необязательные, шлём только изменённые.
@@ -99,9 +106,49 @@ struct UpdateWorkerRequest: Encodable {
     var is_curator: Bool?
     var pass: String?
     var company_id: Int?     // -1 = отвязать компанию
+    /// Набор компаний реализатора. Его правит и сам реализатор в своей карточке.
+    var company_ids: [Int]?
+    /// Уволен: пропадает из списков и не может войти; история остаётся.
+    var archived: Bool?
     var email: String?       // "" = очистить
     var phone: String?       // "" = очистить
     var avatar: String?      // S3-ключ из presign; "" = убрать фото
+}
+
+/// Строка журнала действий — `GET /api/audit`.
+struct AuditEntryDTO: Decodable, Identifiable {
+    let id: Int
+    let actor_fio: String
+    /// delete_message | delete_event | delete_worker | delete_disk_files |
+    /// remove_from_photobank | cancel_shift
+    let action: String
+    let object: String
+    let details: String
+    let created_at: String
+
+    var actionTitle: String {
+        switch action {
+        case "delete_message":       return "Удалено сообщение"
+        case "delete_event":         return "Удалено мероприятие"
+        case "delete_worker":        return "Удалён сотрудник"
+        case "delete_disk_files":    return "Удалено с Диска"
+        case "remove_from_photobank": return "Убрано из фотобанка"
+        case "cancel_shift":         return "Отменена смена"
+        default:                     return action
+        }
+    }
+
+    var icon: String {
+        switch action {
+        case "delete_message":        return "text.bubble"
+        case "delete_event":          return "calendar.badge.minus"
+        case "delete_worker":         return "person.badge.minus"
+        case "delete_disk_files":     return "folder.badge.minus"
+        case "remove_from_photobank": return "photo.badge.minus"
+        case "cancel_shift":          return "clock.badge.xmark"
+        default:                      return "trash"
+        }
+    }
 }
 
 /// Компания (бренд) — `GET /api/companies`.
@@ -109,6 +156,9 @@ struct CompanyDTO: Decodable, Identifiable {
     let id: Int
     let code: String
     let name: String
+    /// Как компания зовётся в Tony («Аренда Плюс» против «А+») — по нему сервер
+    /// сопоставляет людей при заведении из CRM.
+    let crm_name: String?
 }
 
 // MARK: - Мероприятия
@@ -186,6 +236,33 @@ struct MeRightsDTO: Decodable {
     let checkin: Bool?
     /// Раздавать роли в чате — владелец, руководитель, реализатор своей компании.
     let assign: Bool?
+    /// Объявить важное с отметкой «Ознакомлен»: админ чата, старший, наблюдатель.
+    let alarm: Bool?
+    /// Править и отменять смены задним числом — только руководство (админ,
+    /// руководитель, реализатор своих компаний). Админу чата этого мало.
+    let shift_cancel: Bool?
+
+    /// Отмечаться «ознакомлен» положено участнику и старшему: у админа чата,
+    /// кладовщика и наблюдателя такой кнопки нет — иначе список никогда не
+    /// станет полным.
+    var canAck: Bool { role == "member" || role == "senior" }
+}
+
+/// `GET /api/messages/{id}/acks` — кто отметился, а кто ещё нет.
+struct AckPersonDTO: Decodable, Identifiable {
+    let id: Int
+    let fio: String
+    /// Роль в мероприятии.
+    let role: String
+    let done: Bool
+    /// Когда отметился (пусто — ещё нет).
+    let at: String?
+}
+
+/// `POST /api/events/{id}/alarm` — важное объявление в тему.
+struct AlarmRequest: Encodable {
+    let topic_id: Int?
+    let text: String
 }
 
 // MARK: - Этапы мероприятия
@@ -242,7 +319,9 @@ struct SetEventTagsRequest: Encodable {
 }
 
 /// Смена сотрудника на мероприятии.
-struct CheckinDTO: Decodable {
+struct CheckinDTO: Decodable, Identifiable {
+    /// Смена на мероприятии одна на человека — id сотрудника её и опознаёт.
+    var id: Int { worker_id }
     let worker_id: Int
     let fio: String
     let role: String?
@@ -255,6 +334,19 @@ struct CheckinDTO: Decodable {
     /// Кто проставил отметку за сотрудника (пусто = отметился сам).
     let opened_by: String?
     let closed_by: String?
+    /// Кто, когда и что именно правил руками: вход / выход / диапазон /
+    /// снято завершение. Без этого в сводке появляются часы, которых никто
+    /// не проставлял.
+    let edited_by: String?
+    let edited_at: String?
+    let edited_what: String?
+
+    /// Смену правили задним числом — строкой под отметкой.
+    var editNote: String? {
+        guard let who = edited_by, !who.isEmpty else { return nil }
+        let what = (edited_what?.isEmpty == false) ? edited_what! : "время"
+        return "правил(а) \(who): \(what)"
+    }
 }
 
 struct MemberRoleRequest: Encodable { let role: String }
@@ -477,8 +569,19 @@ struct ShiftRowDTO: Decodable, Identifiable {
     let geo_lng: Double?
     let opened_by: String?
     let closed_by: String?
+    /// Кто и что правил задним числом — в отчёте это должно быть видно.
+    let edited_by: String?
+    let edited_at: String?
+    let edited_what: String?
 
     var id: String { "\(worker_id)-\(event_id)-\(checked_at)" }
+
+    /// Строка «правил(а) Иванов: выход» — иначе непонятно, откуда часы.
+    var editNote: String? {
+        guard let who = edited_by, !who.isEmpty else { return nil }
+        let what = (edited_what?.isEmpty == false) ? edited_what! : "время"
+        return "правил(а) \(who): \(what)"
+    }
 }
 
 // MARK: - Приглашения по ссылке
@@ -618,6 +721,12 @@ struct MessageDTO: Decodable {
     let edited_at: String?
     let created_at: String
     let reactions: [ReactionDTO]?
+    /// «Ознакомлен»: стоит под вводными из сделки (`crm`) и важным объявлением (`alarm`).
+    let needs_ack: Bool?
+    let ack_count: Int?
+    /// Сколько человек вообще должны отметиться — участники и старшие мероприятия.
+    let ack_total: Int?
+    let ack_me: Bool?
 
     var isVideo: Bool { kind == "video" }
     var isAudio: Bool { kind == "audio" }
@@ -825,6 +934,8 @@ extension User {
         self.isCurator = dto.isCurator
         self.globalRole = dto.role ?? "worker"
         self.companyId = dto.company_id
+        self.companyIds = dto.company_ids ?? []
+        self.isArchived = dto.archived_at != nil
         self.lastSeen = DateParse.iso(dto.last_seen)
     }
 
@@ -1007,5 +1118,9 @@ extension Message {
         self.albumId = dto.album_id
         self.topicId = dto.topic_id
         self.inPhotobank = dto.in_photobank ?? false
+        self.needsAck = dto.needs_ack ?? false
+        self.ackCount = dto.ack_count ?? 0
+        self.ackTotal = dto.ack_total ?? 0
+        self.ackMe = dto.ack_me ?? false
     }
 }

@@ -31,6 +31,20 @@ struct Message: Identifiable, Codable, Equatable, Hashable {
     /// мероприятия выглядели бы одинаково серыми.
     var systemKind: String? = nil
 
+    /// Под сообщением стоит отметка «Ознакомлен»: так приходят вводные из сделки
+    /// (`crm`) и важное объявление от руководства (`alarm`).
+    var needsAck: Bool = false
+    var ackCount: Int = 0
+    /// Сколько человек должны отметиться — участники и старшие мероприятия.
+    var ackTotal: Int = 0
+    var ackMe: Bool = false
+
+    /// Врезка, а не пузырь: вводные из сделки и важное объявление — это уведомление,
+    /// а не чья-то реплика в переписке.
+    var isNotice: Bool { systemKind == "crm" || systemKind == "alarm" }
+    /// Важное от руководства (у него, в отличие от вводных, виден автор).
+    var isAlarm: Bool { systemKind == "alarm" }
+
     enum Kind: String, Codable {
         case text
         case photo

@@ -19,6 +19,10 @@ protocol DashboardServicing {
     func markViewed(dealId: String) async
     /// Смены по всем мероприятиям за период.
     func allShifts(from: Date?, to: Date?) async -> [ShiftRowDTO]?
+    /// Смены одного мероприятия целиком. Период здесь не применяется: мероприятие
+    /// длится свои два дня, и «показать его смены» не должно зависеть от месяца,
+    /// выбранного в сводке.
+    func eventShifts(dealId: String) async -> [ShiftRowDTO]?
 }
 
 final class RealDashboardService: DashboardServicing {
@@ -49,6 +53,10 @@ final class RealDashboardService: DashboardServicing {
         return try? await APIClient.shared.get("/api/shifts\(query)", as: [ShiftRowDTO].self)
     }
 
+    func eventShifts(dealId: String) async -> [ShiftRowDTO]? {
+        try? await APIClient.shared.get("/api/shifts?event=\(dealId)", as: [ShiftRowDTO].self)
+    }
+
     /// Сервер ждёт голую дату YYYY-MM-DD; границу «по» он сам растягивает на весь день.
     static func day(_ date: Date) -> String {
         let f = DateFormatter()
@@ -64,4 +72,5 @@ final class MockDashboardService: DashboardServicing {
     func day(_ date: String) async -> [DashEventDTO]? { [] }
     func markViewed(dealId: String) async {}
     func allShifts(from: Date?, to: Date?) async -> [ShiftRowDTO]? { [] }
+    func eventShifts(dealId: String) async -> [ShiftRowDTO]? { [] }
 }

@@ -43,6 +43,9 @@ enum ShiftDetail {
         var parts: [String] = []
         if let opened = row.opened_by, !opened.isEmpty { parts.append("открыл: \(opened)") }
         if let closed = row.closed_by, !closed.isEmpty { parts.append("закрыл: \(closed)") }
+        // Правка задним числом — тоже в эту строку: без неё в отчёте появляются
+        // часы, которых никто не проставлял.
+        if let edit = row.editNote { parts.append(edit) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

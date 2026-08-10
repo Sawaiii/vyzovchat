@@ -26,6 +26,10 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     var globalRole: String = "worker"
     /// Компания реализатора: он админ всех её мероприятий.
     var companyId: Int? = nil
+    /// …и весь набор компаний, которые он ведёт (отмечает сам в своей карточке).
+    var companyIds: [Int] = []
+    /// Уволен: в списках его нет, войти не может, история цела.
+    var isArchived: Bool = false
     var lastSeen: Date? = nil   // «последний раз в сети»
     /// Роль в конкретном мероприятии: admin | senior | member | observer | storekeeper
     var eventRole: String? = nil

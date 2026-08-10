@@ -58,6 +58,10 @@ final class RealtimeService: ObservableObject {
     let mentions = PassthroughSubject<String, Never>()
     /// Кто-то открыл или закрыл смену: (eventId, отметка).
     let checkins = PassthroughSubject<(eventId: String, checkin: CheckinDTO), Never>()
+    /// Смену убрали целиком (руководство отменило): (eventId, workerId).
+    let checkinRemoved = PassthroughSubject<(eventId: String, workerId: String), Never>()
+    /// Кто-то отметился «ознакомлен»: (id сообщения, сколько всего отметок).
+    let ackUpdates = PassthroughSubject<(messageId: String, count: Int), Never>()
     /// Мы сами прочитали чат (его id) — чтобы список сразу обнулил счётчик.
     let localRead = PassthroughSubject<String, Never>()
 
@@ -502,6 +506,17 @@ final class RealtimeService: ObservableObject {
         case "stages:changed":
             stagesChanged.send(Self.idString(root["eventId"] ?? ""))
 
+        // Кто-то отметился «ознакомлен» — счётчик под врезкой должен вырасти
+        // у всех, а не только у нажавшего.
+        case "ack":
+            ackUpdates.send((messageId: Self.idString(root["message_id"] ?? ""),
+                             count: Self.intValue(root["count"])))
+
+        // Смену отменили целиком — строка о ней должна исчезнуть из «Смен».
+        case "checkin_removed":
+            checkinRemoved.send((eventId: Self.idString(root["eventId"] ?? ""),
+                                 workerId: Self.idString(root["workerId"] ?? "")))
+
         case "topics:changed":
             topicsChanged.send(())
 
@@ -551,13 +566,15 @@ final class RealtimeService: ObservableObject {
         guard msg.chatId != activeChatId else { return }       // не открытый сейчас чат
         // Отметки о смене и прочие служебные строки — фон мероприятия, а не
         // разговор: сервер по ним пуш не шлёт, и локально дёргать не за чем.
-        guard !msg.isSystem else { return }
+        // Важное объявление — исключение: под ним ждут отметку «Ознакомлен»,
+        // и сервер шлёт по нему пуш наравне с обычным сообщением.
+        guard !msg.isSystem || msg.isAlarm else { return }
         // Упоминание пробивает «без звука»: его как раз и ждут адресно.
         // Проверяем сообщение, а не чат: тема могла быть заглушена отдельно от
-        // мероприятия. Упоминание пробивает «без звука» — его как раз и ждут адресно.
-        guard mentioned || !MuteStore.isMuted(msg) else { return }
+        // мероприятия. Важное — тоже: его нельзя пропустить из-за «без звука».
+        guard mentioned || msg.isAlarm || !MuteStore.isMuted(msg) else { return }
         let repliedToMe = msg.replySender != nil && msg.replySender == currentUserFio
-        let title = msg.senderName ?? "Новое сообщение"
+        let title = msg.isAlarm ? "Важное" : (msg.senderName ?? "Новое сообщение")
         let prefix = mentioned ? "упомянул(а) вас: " : (repliedToMe ? "ответил(а) вам: " : "")
         NotificationsManager.shared.show(title: title, body: prefix + msg.previewText,
                                          chatId: msg.chatId, avatarURL: msg.senderAvatarURL)

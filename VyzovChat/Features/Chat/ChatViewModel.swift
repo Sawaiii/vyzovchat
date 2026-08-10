@@ -58,6 +58,12 @@ final class ChatViewModel: ObservableObject {
     var canEditEquipment: Bool { rights?.equip_edit ?? isChatAdmin }
     var canCheckEquipment: Bool { rights?.equip_check ?? isChatAdmin }
     var canAssignRoles: Bool { rights?.assign ?? false }
+    /// Объявить важное с отметкой «Ознакомлен» — админ чата, старший, наблюдатель.
+    var canAlarm: Bool { rights?.alarm ?? false }
+    /// Отмечаться «ознакомлен» — участник и старший.
+    var canAck: Bool { rights?.canAck ?? false }
+    /// Править и отменять смены задним числом — только руководство.
+    var canEditShifts: Bool { rights?.shift_cancel ?? false }
     /// Этапы, которые закрываю именно я: у админа все, у старшего середина,
     /// у кладовщика погрузка и приёмка.
     var myStages: Set<String> { Set(rights?.stages ?? []) }
@@ -219,6 +225,14 @@ final class ChatViewModel: ObservableObject {
                     guard let self, eventId == self.chat.dealId else { return }
                     await self.loadEventMeta()
                 }
+            }
+            .store(in: &cancellables)
+
+        // Кто-то отметился «ознакомлен»: счётчик под врезкой общий, растёт у всех.
+        RealtimeService.shared.ackUpdates
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] update in
+                Task { @MainActor in self?.applyAck(update.messageId, count: update.count) }
             }
             .store(in: &cancellables)
 
@@ -1066,6 +1080,46 @@ final class ChatViewModel: ObservableObject {
     private func applyReactions(_ messageId: String, _ reactions: [Message.Reaction]) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
         messages[idx].reactions = reactions
+    }
+
+    // MARK: - «Ознакомлен» и важное объявление
+
+    /// Счётчик отметок пришёл по сокету. Своё `ackMe` не трогаем: кадр общий
+    /// на всех, а отметился ли я — знаю только по своему нажатию и по ленте.
+    private func applyAck(_ messageId: String, count: Int) {
+        guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        messages[idx].ackCount = max(messages[idx].ackCount, count)
+    }
+
+    /// Отметиться «ознакомлен». Повторное нажатие сервер игнорирует, поэтому
+    /// кнопку прячем сразу — ждать ответа, чтобы она погасла, незачем.
+    func ack(_ message: Message) async {
+        guard let idx = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[idx].ackMe = true
+        messages[idx].ackCount += 1
+        struct AckResultDTO: Decodable { let ok: Bool?; let count: Int? }
+        guard let dto = try? await APIClient.shared.post("/api/messages/\(message.id)/ack",
+                                                         json: EmptyBody(), as: AckResultDTO.self),
+              let count = dto.count else { return }
+        if let i = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[i].ackCount = count
+        }
+    }
+
+    /// Кто отметился, а кто ещё нет.
+    func ackList(messageId: String) async -> [AckPersonDTO] {
+        (try? await APIClient.shared.get("/api/messages/\(messageId)/acks", as: [AckPersonDTO].self)) ?? []
+    }
+
+    /// Важное объявление в открытую тему: та же врезка, что у вводных из сделки,
+    /// но с автором и пушем на телефоны. Обычным сообщением такое теряется.
+    func sendAlarm(_ text: String) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        _ = try await APIClient.shared.post("/api/events/\(chat.dealId)/alarm",
+                                            json: AlarmRequest(topic_id: selectedTopicId, text: body),
+                                            as: MessageDTO.self)
+        draft = ""
     }
 
     func setActive(_ active: Bool) {

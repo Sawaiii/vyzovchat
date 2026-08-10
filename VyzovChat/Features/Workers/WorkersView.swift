@@ -11,8 +11,40 @@ struct WorkersView: View {
     private enum Tab: String, CaseIterable, Identifiable {
         case staff = "Штат"
         case guests = "Гости"
+        case archived = "Уволены"
         var id: String { rawValue }
-        var scope: WorkersScope { self == .staff ? .staff : .guests }
+
+        var scope: WorkersScope {
+            switch self {
+            case .staff:    return .staff
+            case .guests:   return .guests
+            case .archived: return .archived
+            }
+        }
+
+        var emptyIcon: String {
+            switch self {
+            case .staff:    return "person.2"
+            case .guests:   return "person.badge.clock"
+            case .archived: return "archivebox"
+            }
+        }
+
+        var emptyTitle: String {
+            switch self {
+            case .staff:    return "Сотрудников нет"
+            case .guests:   return "Гостей нет"
+            case .archived: return "Уволенных нет"
+            }
+        }
+
+        var emptyMessage: String {
+            switch self {
+            case .staff:    return "Заведите сотрудника кнопкой в правом верхнем углу."
+            case .guests:   return "Здесь появятся те, кто пришёл по ссылке: склад и подрядчики."
+            case .archived: return "Уволенный не входит в систему, но его смены и переписка остаются."
+            }
+        }
     }
 
     @State private var tab: Tab = .staff
@@ -48,11 +80,7 @@ struct WorkersView: View {
                         Spacer()
                     } else if filtered.isEmpty {
                         Spacer()
-                        EmptyState(icon: tab == .staff ? "person.2" : "person.badge.clock",
-                                   title: tab == .staff ? "Сотрудников нет" : "Гостей нет",
-                                   message: tab == .staff
-                                        ? "Заведите сотрудника кнопкой в правом верхнем углу."
-                                        : "Здесь появятся те, кто пришёл по ссылке: склад и подрядчики.")
+                        EmptyState(icon: tab.emptyIcon, title: tab.emptyTitle, message: tab.emptyMessage)
                         Spacer()
                     } else {
                         ScrollView {
