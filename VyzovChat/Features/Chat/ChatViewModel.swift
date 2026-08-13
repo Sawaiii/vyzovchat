@@ -131,7 +131,13 @@ final class ChatViewModel: ObservableObject {
     private let service: ChatServicing
     private let currentUserId: String
     private var usersById: [String: User] = [:]
-    private var lastMarkedRead = 0
+    /// Докуда уже отмечено прочитанным — по КАЖДОЙ ленте отдельно.
+    ///
+    /// Был один счётчик на весь чат, и он ломал отметку: побывав в теме со
+    /// свежими сообщениями, мы переставали отмечать «Общий» (там id меньше), а
+    /// служебные строки — смены, этапы, состав — живут именно в «Общем». Они и
+    /// висели непрочитанными, сколько их ни открывай.
+    private var lastMarkedRead: [String: Int] = [:]
     private var cancellables = Set<AnyCancellable>()
     /// Первичная загрузка завершена — только после неё имеет смысл досинхрон.
     private var didInitialLoad = false
@@ -558,7 +564,6 @@ final class ChatViewModel: ObservableObject {
         cacheTopic(messages, for: topicKey(loadedTopicId))   // запомнили текущую
         loadedTopicId = id
         selectedTopicId = id
-        lastMarkedRead = 0
         // Закрепы у каждой вкладки свои. Если тема уже открывалась — берём её
         // полосу из кэша сразу, без мигания; если нет — пусто до ответа сервера.
         pins = pinsByTopic[topicKey(id)] ?? []
@@ -1074,10 +1079,20 @@ final class ChatViewModel: ObservableObject {
     func markRead() async {
         guard useRealtime else { return }
         let lastRead = messages.compactMap { Int($0.id) }.max() ?? 0
-        guard lastRead > 0, lastRead > lastMarkedRead else { return }
-        lastMarkedRead = lastRead
+        // Сверяемся с курсором ЭТОЙ ленты: у «Общего» и у каждой темы свои id,
+        // и общий на всех курсор глушил отметку там, где номера меньше.
+        let key = feedChatKey
+        guard lastRead > 0, lastRead > (lastMarkedRead[key] ?? 0) else { return }
+        lastMarkedRead[key] = lastRead
+
+        // Бейдж чата в списке сервер считает по мероприятию ЦЕЛИКОМ, а не по
+        // открытой ленте. Поэтому по ключу мероприятия шлём максимум среди всех
+        // загруженных лент: служебные строки — смены, этапы, состав — падают в
+        // «Общий», и, сидя в подтеме, мы их «не прочитывали» никогда. Бейджи
+        // самих тем при этом остаются честными: у них свои ключи.
+        let eventLastRead = max(lastRead, maxKnownMessageId)
         _ = try? await APIClient.shared.post("/api/reads",
-                                             json: ReadRequest(chatKey: chatKey, lastRead: lastRead),
+                                             json: ReadRequest(chatKey: chatKey, lastRead: eventLastRead),
                                              as: OKDTO.self)
         // Список чатов обнуляет счётчик сразу, без ручного обновления.
         RealtimeService.shared.localRead.send(chat.id)
@@ -1090,6 +1105,16 @@ final class ChatViewModel: ObservableObject {
                                                  as: OKDTO.self)
             topicUnread[topicKey(loadedTopicId)] = 0
         }
+    }
+
+    /// Самый большой id среди всего, что мы про этот чат знаем: открытая лента
+    /// плюс кэши остальных тем (их подтягивает `prefetchTopics`).
+    private var maxKnownMessageId: Int {
+        var top = messages.compactMap { Int($0.id) }.max() ?? 0
+        for feed in messagesByTopic.values {
+            top = max(top, feed.compactMap { Int($0.id) }.max() ?? 0)
+        }
+        return top
     }
 
     private func applyReactions(_ messageId: String, _ reactions: [Message.Reaction]) {

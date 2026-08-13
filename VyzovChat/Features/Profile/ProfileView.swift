@@ -34,6 +34,10 @@ struct ProfileView: View {
                         if let user = session.currentUser {
                             header(user)
                             infoCard(user)
+                            // Свои награды, оценка и компетенции — тем же блоком,
+                            // что и в чужой карточке. Оценивать себя нельзя, и
+                            // блок это учитывает сам (сервер шлёт can_rate=false).
+                            ProfileExtrasSection(user: user).environmentObject(session)
                         }
                         // Жалобы разбирает не только админ: их адресуют тому, кто
                         // завёл чат. Счётчик показываем всем, у кого они есть.
