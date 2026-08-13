@@ -15,11 +15,11 @@ struct EventInfoView: View {
     var canClaims: Bool = false
     /// Опрос клиента: выдать ссылку и посмотреть отзывы (`me_rights.review`).
     var canReview: Bool = false
+    /// Подтема «Претензия» — туда уходит комментарий при урегулировании.
+    var claimTopicId: Int?
     /// Площадка и ссылка на сделку — приходят из CRM вместе с мероприятием.
     var address: String?
     var crmURL: URL?
-    /// Подтема «Претензия» — туда уходит комментарий при урегулировании.
-    var claimTopicId: Int?
     /// Фото с мероприятия запрещено использовать (галочка ниже).
     @State var photosRestricted: Bool = false
 
