@@ -149,6 +149,13 @@ struct ReportEventDetailView: View {
                 if let marked = markedBy(checkin) {
                     Text(marked).font(.system(size: 9)).foregroundStyle(Theme.textSecondary)
                 }
+                // Смену закрыли далеко от места начала — в отчёте это важнее
+                // всего: часы засчитаны, а человек уже уехал.
+                if let far = checkin.finishFarNote {
+                    Label(far, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9)).foregroundStyle(Theme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: Spacing.xs)
             Text(ShiftsSummary.hours(duration(checkin)))

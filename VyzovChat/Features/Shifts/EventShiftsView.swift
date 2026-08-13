@@ -37,6 +37,7 @@ struct EventShiftsView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
     @Environment(\.adaptiveMetrics) private var metrics
+    @Environment(\.openURL) private var openURL
 
     @State private var shifts: [CheckinDTO] = []
     @State private var members: [User] = []
@@ -216,6 +217,16 @@ struct EventShiftsView: View {
                 Text(shift.fio).font(Typography.callout)
                     .foregroundStyle(Theme.textPrimary).lineLimit(1)
                 Text(interval(shift)).font(.caption2).foregroundStyle(Theme.textSecondary)
+                // Где открыли и где закрыли смену: раньше координаты завершения
+                // сервер писал, но никто не показывал.
+                geoRow(shift)
+                // Тревога: смену закрыли далеко от места начала — обычно это
+                // «завершил по дороге домой», и в сводке это надо видеть.
+                if let far = shift.finishFarNote {
+                    Label(far, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(Theme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 // Кто отметил, если это делал не сам сотрудник.
                 if let note = markedBy(shift) {
                     Text(note).font(.caption2).foregroundStyle(Theme.warning)
@@ -439,6 +450,35 @@ struct EventShiftsView: View {
         let start = time(shift.checked_at)
         guard let finished = shift.finished_at else { return "с \(start) — на смене" }
         return "\(start) — \(time(finished))"
+    }
+
+    /// «старт · финиш» — обе точки открываются в картах. Словами, а не значками:
+    /// 📍 и 🏁 рядом друг с другом читались как одно место.
+    @ViewBuilder
+    private func geoRow(_ shift: CheckinDTO) -> some View {
+        let start = shift.geo_lat != nil && shift.geo_lng != nil
+        let finish = shift.finish_lat != nil && shift.finish_lng != nil
+        if start || finish {
+            HStack(spacing: Spacing.xs) {
+                if start {
+                    geoLink("старт", lat: shift.geo_lat!, lng: shift.geo_lng!, color: Theme.success)
+                }
+                if finish {
+                    geoLink("финиш", lat: shift.finish_lat!, lng: shift.finish_lng!,
+                            color: shift.finishedFarAway ? Theme.danger : Theme.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func geoLink(_ title: String, lat: Double, lng: Double, color: Color) -> some View {
+        Button {
+            if let url = URL(string: "https://yandex.ru/maps/?pt=\(lng),\(lat)&z=17") { openURL(url) }
+        } label: {
+            Label(title, systemImage: "mappin.circle.fill")
+                .font(.system(size: 10)).foregroundStyle(color)
+        }
+        .buttonStyle(.plain)
     }
 
     private func markedBy(_ shift: CheckinDTO) -> String? {

@@ -482,6 +482,45 @@ struct CheckinDTO: Decodable, Identifiable {
         let what = (edited_what?.isEmpty == false) ? edited_what! : "время"
         return "правил(а) \(who): \(what)"
     }
+
+    /// Сколько метров между началом и концом смены.
+    ///
+    /// Координаты завершения сервер писал и раньше, но их никто не показывал:
+    /// смену закрывали по дороге домой, и в сводке это выглядело обычной сменой.
+    var finishDistance: Double? {
+        guard let lat1 = geo_lat, let lng1 = geo_lng,
+              let lat2 = finish_lat, let lng2 = finish_lng else { return nil }
+        return GeoDistance.meters(lat1: lat1, lng1: lng1, lat2: lat2, lng2: lng2)
+    }
+
+    /// Смену закрыли далеко от места, где открыли. Порог тот же, что в вебе, —
+    /// 500 м: площадка бывает большая, и уходить на сотню метров это норма.
+    var finishedFarAway: Bool { (finishDistance ?? 0) > 500 }
+
+    /// «закрыл(а) в 1,2 км от старта» — с расстоянием, иначе пометка без веса.
+    var finishFarNote: String? {
+        guard finishedFarAway, let d = finishDistance else { return nil }
+        return "смену закрыли в " + GeoDistance.text(d) + " от места начала"
+    }
+}
+
+/// Расстояние между точками. Гаверсинус, а не CoreLocation: нужен один
+/// показатель в сводке смен, тащить ради него менеджер локаций незачем.
+enum GeoDistance {
+    static func meters(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {
+        let r = 6_371_000.0                        // средний радиус Земли, м
+        let p1 = lat1 * .pi / 180, p2 = lat2 * .pi / 180
+        let dp = (lat2 - lat1) * .pi / 180
+        let dl = (lng2 - lng1) * .pi / 180
+        let a = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+        return 2 * r * atan2(sqrt(a), sqrt(1 - a))
+    }
+
+    /// Метры до километра, дальше — километры с одним знаком.
+    static func text(_ meters: Double) -> String {
+        if meters < 1000 { return "\(Int(meters.rounded())) м" }
+        return String(format: "%.1f", meters / 1000).replacingOccurrences(of: ".", with: ",") + " км"
+    }
 }
 
 struct MemberRoleRequest: Encodable { let role: String }

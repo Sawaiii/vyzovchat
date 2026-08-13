@@ -139,7 +139,7 @@ struct ProfileView: View {
         }
         .buttonStyle(PressableStyle())
         .sheet(isPresented: $showComplaints) {
-            ComplaintsView()
+            ComplaintsView().environmentObject(session)
         }
         .task { newComplaints = await PeopleExtras.complaints().new ?? 0 }
     }

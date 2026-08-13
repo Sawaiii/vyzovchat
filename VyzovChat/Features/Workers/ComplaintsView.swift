@@ -6,6 +6,7 @@ import SwiftUI
 /// жалуются на него самого — руководителю. Супер-админ видит все по организации.
 /// Копия падает в служебный чат «Жалобы», а здесь — список с разбором.
 struct ComplaintsView: View {
+    @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
     @Environment(\.adaptiveMetrics) private var metrics
 
@@ -13,6 +14,9 @@ struct ComplaintsView: View {
     @State private var isLoading = true
     @State private var busyId: Int?
     @State private var errorText: String?
+    /// Справочник по id — по нему имена в карточке открывают профиль.
+    @State private var people: [String: User] = [:]
+    @State private var openUser: User?
 
     private var pending: [ComplaintDTO] { items.filter(\.isNew) }
     private var done: [ComplaintDTO] { items.filter { !$0.isNew } }
@@ -48,6 +52,11 @@ struct ComplaintsView: View {
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Закрыть") { dismiss() } } }
             .task { await load() }
             .refreshable { await load() }
+            .sheet(item: $openUser) { user in
+                NavigationStack {
+                    UserProfileView(user: user).environmentObject(session)
+                }
+            }
         }
     }
 
@@ -67,9 +76,10 @@ struct ComplaintsView: View {
                     Image(systemName: item.isNew ? "exclamationmark.bubble.fill" : "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(item.isNew ? Theme.danger : Theme.success)
-                    Text("На " + (item.about_fio ?? "сотрудника"))
-                        .font(Typography.callout.weight(.medium))
-                        .foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    // Имя открывает карточку: разбирать жалобу, не зная, кто это,
+                    // невозможно — а по фамилии в списке человека не найти.
+                    nameButton("На ", id: item.about_id, fio: item.about_fio ?? "сотрудника",
+                               font: Typography.callout.weight(.medium))
                     Spacer(minLength: 0)
                     Text(when(item.created_at)).font(.caption2).foregroundStyle(Theme.textSecondary)
                 }
@@ -91,8 +101,8 @@ struct ComplaintsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Spacing.s) {
-                    Text("от " + (item.author_fio ?? "—"))
-                        .font(.caption2).foregroundStyle(Theme.textSecondary)
+                    nameButton("от ", id: item.author_id, fio: item.author_fio ?? "—",
+                               font: .caption2, tint: Theme.textSecondary)
                     Spacer(minLength: 0)
                     if item.isNew {
                         if busyId == item.id {
@@ -107,6 +117,21 @@ struct ComplaintsView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Имя как кнопка — если человек нашёлся в справочнике. Не нашёлся (уволен,
+    /// гость по ссылке) — обычный текст, а не кнопка, ведущая в никуда.
+    @ViewBuilder
+    private func nameButton(_ prefix: String, id: Int, fio: String,
+                            font: Font, tint: Color = Theme.textPrimary) -> some View {
+        if let user = people[String(id)] {
+            Button { openUser = user } label: {
+                Text(prefix + fio).font(font).foregroundStyle(Theme.accent).lineLimit(1)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(prefix + fio).font(font).foregroundStyle(tint).lineLimit(1)
         }
     }
 
@@ -133,7 +158,11 @@ struct ComplaintsView: View {
     }
 
     private func load() async {
-        items = await PeopleExtras.complaints().items
+        async let list = PeopleExtras.complaints()
+        async let directory = DirectoryCache.colleagues()
+        let (loaded, users) = await (list, directory)
+        items = loaded.items
+        people = Dictionary(users.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         isLoading = false
     }
 }
