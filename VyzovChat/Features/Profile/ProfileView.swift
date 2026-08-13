@@ -14,6 +14,9 @@ struct ProfileView: View {
     @State private var uploadingAvatar = false
     @State private var showWorkers = false
     @State private var showAudit = false
+    @State private var showComplaints = false
+    /// Сколько жалоб ждут разбора — счётчик в строке.
+    @State private var newComplaints = 0
 
     // Привязка Яндекса
     @State private var yandexLinked = false
@@ -32,6 +35,9 @@ struct ProfileView: View {
                             header(user)
                             infoCard(user)
                         }
+                        // Жалобы разбирает не только админ: их адресуют тому, кто
+                        // завёл чат. Счётчик показываем всем, у кого они есть.
+                        if newComplaints > 0 || session.currentUser?.isAdmin == true { complaintsRow }
                         if session.currentUser?.isAdmin == true { adminCard }
                         yandexCard
                         settingsCard
@@ -113,6 +119,29 @@ struct ProfileView: View {
                 }
             }
         }
+    }
+
+    /// Жалобы, которые мне разбирать. Со счётчиком неразобранных: без него о них
+    /// узнаёшь, только если сам зайдёшь.
+    private var complaintsRow: some View {
+        Button { showComplaints = true } label: {
+            HStack(spacing: Spacing.s) {
+                Image(systemName: "exclamationmark.bubble.fill")
+                    .foregroundStyle(newComplaints > 0 ? Theme.danger : Theme.accent).frame(width: 24)
+                Text("Жалобы").font(Typography.callout).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                if newComplaints > 0 { UnreadBadge(count: newComplaints, compact: false) }
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+            .padding(Spacing.m)
+            .glass(cornerRadius: Theme.cornerLarge)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .sheet(isPresented: $showComplaints) {
+            ComplaintsView()
+        }
+        .task { newComplaints = await PeopleExtras.complaints().new ?? 0 }
     }
 
     /// Админские разделы — сотрудники и журнал действий.

@@ -33,6 +33,9 @@ struct UserProfileView: View {
                     header
                     if !isSelf { messageButton }
                     infoCard
+                    // Награды, оценка и компетенции — своим запросом: карточка
+                    // полезна и без них, поэтому блок не держит её загрузку.
+                    ProfileExtrasSection(user: user).environmentObject(session)
                     if !sharedMedia.isEmpty { sharedMediaSection }
                     if !sharedFiles.isEmpty { sharedFilesSection }
                 }
@@ -127,6 +130,17 @@ struct UserProfileView: View {
                 OnlineDot(isOnline: isOnline, size: 20)
                     .offset(x: -6, y: -6)
             }
+            // Знак на аватарке — чтобы незаполненные контакты было видно и в
+            // чужой карточке: по ним человека ищут вне чата.
+            .overlay(alignment: .topTrailing) {
+                if user.contactsMissing {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.warning)
+                        .background(Circle().fill(Theme.bg))
+                        .offset(x: 4, y: -2)
+                }
+            }
             Text(user.fullName)
                 .font(Typography.title)
                 .foregroundStyle(Theme.textPrimary)
@@ -163,8 +177,28 @@ struct UserProfileView: View {
     private var infoCard: some View {
         GlassCard {
             VStack(spacing: 0) {
+                // Без почты и телефона человека не найти вне чата и не
+                // восстановить ему пароль — говорим об этом прямо в карточке.
+                if user.contactsMissing {
+                    HStack(spacing: Spacing.s) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.warning).frame(width: 24)
+                        Text(isSelf
+                                ? "Заполните почту и телефон: без них не восстановить пароль."
+                                : "Не заполнены почта или телефон.")
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, Spacing.s)
+                    Divider().opacity(0.3)
+                }
                 if !user.phone.isEmpty {
                     row("Телефон", user.phone, "phone.fill")
+                    Divider().opacity(0.3)
+                }
+                if let email = user.email, !email.isEmpty {
+                    row("Почта", email, "envelope.fill")
                     Divider().opacity(0.3)
                 }
                 if !user.login.isEmpty {

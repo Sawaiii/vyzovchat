@@ -82,6 +82,19 @@ enum MediaUploader {
                              name: filename, size: data.count)
     }
 
+    /// Селфи с площадки для отметки смены. Возвращает ключ объекта — его ждёт
+    /// `POST /api/events/{id}/checkin` в поле `photo_key`.
+    ///
+    /// Снимок обязателен именно потому, что геопозицию в телефоне подменить легко,
+    /// а фото на фоне монтажа — нет. Грузим как обычное фото чата: сервер проверяет
+    /// только то, что ключ выдан им и это картинка.
+    static func uploadCheckinPhoto(_ image: UIImage) async throws -> String {
+        guard let data = resized(image, maxSide: 1280).jpegData(compressionQuality: 0.8) else {
+            throw UploadError.failed("Не удалось подготовить снимок")
+        }
+        return try await put(data, filename: "checkin.jpg", purpose: .chat).key
+    }
+
     /// Фото профиля: сервер ждёт уже уменьшенный квадрат. Возвращает ключ —
     /// его нужно передать в `PATCH /api/workers/{id}`.
     static func uploadAvatar(_ image: UIImage, purpose: Purpose = .avatar) async throws -> String {

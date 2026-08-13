@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Смены мероприятия: своя отметка «я на месте» и сводка по бригаде.
 ///
@@ -25,11 +26,11 @@ struct EventShiftsView: View {
         var id: String { rawValue }
 
         var title: String { self == .start ? "Отметиться на месте?" : "Завершить смену?" }
-        var action: String { self == .start ? "Я на месте" : "Завершить" }
+        var action: String { self == .start ? "Сделать снимок" : "Завершить" }
         var message: String {
             self == .start
-                ? "Запишем время и координаты — так подтверждается, что вы на площадке."
-                : "Отметим время окончания. Открыть эту смену заново будет нельзя."
+                ? "Сначала снимок с площадки, потом координаты — так подтверждается, что вы действительно здесь."
+                : "Отметим время окончания. Открыть эту смену заново может только руководство."
         }
     }
 
@@ -44,6 +45,10 @@ struct EventShiftsView: View {
     @State private var busyWorkerId: String?
     @State private var errorText: String?
     @State private var confirming: Confirm?
+    /// Камера для селфи с площадки — без снимка смену не открыть.
+    @State private var showCamera = false
+    /// Селфи, открытое крупно.
+    @State private var photoPreview: ShiftPhoto?
     /// Смена, у которой правим время.
     @State private var editingShift: CheckinDTO?
     /// …и которую убираем целиком.
@@ -116,9 +121,25 @@ struct EventShiftsView: View {
                 Alert(title: Text(confirm.title),
                       message: Text(confirm.message),
                       primaryButton: .default(Text(confirm.action)) {
-                          Task { await mark(checkIn: confirm == .start) }
+                          // Начало смены идёт через камеру: сначала снимок, потом
+                          // гео и запрос. Завершение — сразу, снимок там не нужен.
+                          if confirm == .start { showCamera = true }
+                          else { Task { await mark(checkIn: false) } }
                       },
                       secondaryButton: .cancel(Text("Отмена")))
+            }
+            .fullScreenCover(item: $photoPreview) { photo in
+                ShiftPhotoView(photo: photo)
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CheckinCamera(
+                    onCapture: { image in
+                        showCamera = false
+                        Task { await startShift(selfie: image) }
+                    },
+                    onCancel: { showCamera = false }
+                )
+                .ignoresSafeArea()
             }
         }
     }
@@ -154,7 +175,7 @@ struct EventShiftsView: View {
                     }
                 }
 
-                Text("Отметка сохраняет координаты — так подтверждается, что вы на площадке. Без доступа к геоданным отметиться нельзя; попросите админа чата отметить вас вручную.")
+                Text("Отметка сохраняет снимок с площадки и координаты. Без снимка и геоданных отметиться нельзя; попросите админа чата отметить вас вручную.")
                     .font(.caption2).foregroundStyle(Theme.textSecondary)
             }
         }
@@ -177,7 +198,20 @@ struct EventShiftsView: View {
 
     private func shiftRow(_ shift: CheckinDTO) -> some View {
         HStack(spacing: Spacing.s) {
-            Avatar(name: shift.fio, size: 36, id: String(shift.worker_id))
+            // Селфи с отметки вместо аватара: по нему и видно, что человек был
+            // на площадке. По тапу открывается крупно.
+            if let url = AppConfig.mediaURL(shift.photo_url) {
+                Button { photoPreview = ShiftPhoto(url: url, fio: shift.fio) } label: {
+                    CachedAsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: {
+                        Avatar(name: shift.fio, size: 36, id: String(shift.worker_id))
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Avatar(name: shift.fio, size: 36, id: String(shift.worker_id))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(shift.fio).font(Typography.callout)
                     .foregroundStyle(Theme.textPrimary).lineLimit(1)
@@ -255,13 +289,39 @@ struct EventShiftsView: View {
 
     // MARK: - Действия
 
+    /// Открыть смену: снимок → хранилище → координаты → отметка.
+    ///
+    /// Порядок именно такой: снимок уже сделан, и если сначала спрашивать гео,
+    /// человек с отключённой геолокацией снимал бы зря.
+    private func startShift(selfie: UIImage) async {
+        busy = true
+        errorText = nil
+        defer { busy = false }
+        do {
+            let photoKey = try await MediaUploader.uploadCheckinPhoto(selfie)
+            // Координаты обязательны: сервер без них отметку не примет, и это
+            // осознанное правило — смена подтверждает присутствие на площадке.
+            LocationProvider.shared.requestAuthorization()
+            guard let geo = await LocationProvider.shared.current() else {
+                errorText = ShiftError.geoUnavailable.localizedDescription
+                Haptics.warning()
+                return
+            }
+            apply(try await session.shifts.checkIn(dealId: dealId, lat: geo.lat, lng: geo.lng,
+                                                   photoKey: photoKey))
+            Haptics.success()
+        } catch {
+            errorText = error.localizedDescription
+            Haptics.warning()
+        }
+    }
+
+    /// Завершение смены: снимок не нужен, только координаты.
     private func mark(checkIn: Bool) async {
         busy = true
         errorText = nil
         defer { busy = false }
 
-        // Координаты обязательны: сервер без них отметку не примет, и это
-        // осознанное правило — смена подтверждает присутствие на площадке.
         LocationProvider.shared.requestAuthorization()
         guard let geo = await LocationProvider.shared.current() else {
             errorText = ShiftError.geoUnavailable.localizedDescription
@@ -269,10 +329,7 @@ struct EventShiftsView: View {
             return
         }
         do {
-            let result = checkIn
-                ? try await session.shifts.checkIn(dealId: dealId, lat: geo.lat, lng: geo.lng)
-                : try await session.shifts.checkOut(dealId: dealId, lat: geo.lat, lng: geo.lng)
-            apply(result)
+            apply(try await session.shifts.checkOut(dealId: dealId, lat: geo.lat, lng: geo.lng))
             Haptics.success()
         } catch {
             errorText = error.localizedDescription

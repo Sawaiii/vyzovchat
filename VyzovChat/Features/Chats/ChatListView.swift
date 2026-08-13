@@ -242,7 +242,7 @@ struct ChatRow: View {
                         Text(RelativeDate.short(date)).font(Typography.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
-                if !chat.isDirect {
+                if !chat.isDirect && !chat.isSystem {
                     HStack(spacing: 5) {
                         if let company = chat.company { CompanyBadge(name: company) }
                         // Своя роль в мероприятии: старший и кладовщик отвечают
@@ -300,7 +300,14 @@ struct ChatRow: View {
 
     private var avatar: some View {
         Group {
-            if let url = chat.avatarURL {
+            if chat.isSystem {
+                // Служебный чат — не мероприятие: буквенный кружок с именем
+                // «Жалобы» читался бы как чья-то переписка.
+                Image(systemName: "exclamationmark.bubble.fill")
+                    .font(.title3).foregroundStyle(Theme.warning)
+                    .frame(width: 52, height: 52)
+                    .background(Theme.warning.opacity(0.16), in: Circle())
+            } else if let url = chat.avatarURL {
                 CachedAsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: {
                     Avatar(name: chat.title, size: 52, id: chat.id)
                 }

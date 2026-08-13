@@ -196,6 +196,13 @@ struct EventDTO: Decodable {
     /// Моя роль в составе: admin | senior | member | observer | storekeeper.
     /// Пусто — меня в составе нет (так админ видит чужие мероприятия).
     let my_role: String?
+    /// Служебный чат («Жалобы») — не мероприятие: в нём нет ни этапов, ни смен.
+    let system: Bool?
+    /// Площадка и ссылка на сделку — приходят из CRM, видны всем в шапке чата.
+    let address: String?
+    let crm_url: String?
+    /// Когда в чате писали в последний раз — по нему сортируется список.
+    let last_at: String?
 }
 
 /// `GET /api/events/{id}` — состав, смены и мои права в этом чате.
@@ -228,8 +235,15 @@ struct MeRightsDTO: Decodable {
     let otbor_all: Bool?
     /// Какие этапы этот человек закрывает.
     let stages: [String]?
-    /// Галочки в чеклисте оборудования.
+    /// Галочки в складской половине чеклиста загрузки и в приёмке (кладовщик).
     let equip_check: Bool?
+    /// …в половине реализации на загрузке (админ чата).
+    let equip_check_impl: Bool?
+    /// …и в сверке на площадке: приезд и демонтаж (старший, плюс админ чата —
+    /// иначе без назначенного старшего мероприятие встанет).
+    let equip_check_site: Bool?
+    /// Опрос клиента: выдать ссылку и посмотреть отзывы.
+    let review: Bool?
     /// Добавить и удалить позицию оборудования.
     let equip_edit: Bool?
     /// Отметить свою смену: не для наблюдателя и кладовщика.
@@ -265,6 +279,109 @@ struct AlarmRequest: Encodable {
     let text: String
 }
 
+// MARK: - Жалобы
+
+/// Жалоба на человека — всегда в рамках мероприятия. Уходит тому, кто завёл чат,
+/// в его служебный чат «Жалобы»; если жалуются на него самого — руководителю.
+struct ComplaintDTO: Decodable, Identifiable {
+    let id: Int
+    let event_id: Int
+    let event_name: String?
+    let about_id: Int
+    let about_fio: String?
+    let author_id: Int
+    let author_fio: String?
+    let body: String
+    /// new | done
+    let status: String
+    let closed_fio: String?
+    let closed_at: String?
+    let created_at: String
+
+    var isNew: Bool { status == "new" }
+}
+
+struct ComplaintsDTO: Decodable {
+    let items: [ComplaintDTO]
+    /// Сколько неразобранных — по нему горит счётчик в профиле.
+    let new: Int?
+}
+
+struct CreateComplaintRequest: Encodable {
+    let about_id: Int
+    let body: String
+}
+
+// MARK: - Карточка человека: награды, оценка, компетенции
+
+struct AchievementDTO: Decodable, Identifiable {
+    let code: String
+    let title: String
+    /// Живое число под наградой: сколько на самом деле выездов, фото, часов.
+    let note: String
+    /// Имя файла герба на сервере — картинок у нас нет, рисуем свой значок.
+    let image: String?
+
+    var id: String { code }
+}
+
+struct RatingDTO: Decodable {
+    /// Среднее по всем оценкам; 0 — ещё не оценивали.
+    let avg: Double
+    let count: Int
+    /// Моя оценка, 0 — я не оценивал.
+    let mine: Int
+
+    /// «5,0 (3)» — как в вебе: запятая и число оценивших.
+    var text: String? {
+        guard count > 0 else { return nil }
+        return String(format: "%.1f", avg).replacingOccurrences(of: ".", with: ",") + " (\(count))"
+    }
+}
+
+/// `GET /api/workers/{id}/profile` — социальная часть карточки.
+struct ProfileExtraDTO: Decodable {
+    let achievements: [AchievementDTO]?
+    let rating: RatingDTO?
+    let skills: [String]?
+    /// Могу ли я оценивать и размечать компетенции (руководство и реализаторы).
+    let can_rate: Bool?
+}
+
+struct SetRatingRequest: Encodable { let stars: Int }
+struct AddSkillRequest: Encodable { let skill: String }
+
+// MARK: - Опрос клиента
+
+/// Ссылка на опрос и пришедший по ней отзыв (`GET /api/events/{id}/reviews`).
+struct ReviewDTO: Decodable, Identifiable {
+    let id: Int
+    let url: String
+    let created_at: String?
+    let filled_at: String?
+    /// Оценки 1…10 по четырём вопросам; пусто — опрос ещё не заполнен.
+    let team: Int?
+    let senior: Int?
+    let equipment: Int?
+    let manager: Int?
+    let comment: String?
+
+    var isFilled: Bool { filled_at != nil }
+
+    /// Средняя оценка по четырём вопросам.
+    var average: Double? {
+        let scores = [team, senior, equipment, manager].compactMap { $0 }
+        guard scores.count == 4 else { return nil }
+        return Double(scores.reduce(0, +)) / 4
+    }
+}
+
+struct CreateReviewDTO: Decodable {
+    let id: Int
+    let token: String
+    let url: String
+}
+
 // MARK: - Этапы мероприятия
 
 /// Пройденный этап: погрузка → приезд/монтаж → готовность → демонтаж → приёмка.
@@ -274,11 +391,27 @@ struct StageDTO: Decodable {
     let done_by: String?
 }
 
-/// Сколько позиций оборудования отмечено на погрузке и на приёмке.
+/// Сколько позиций оборудования отмечено в каждом чеклисте.
 struct EquipProgressDTO: Decodable {
     let total: Int
     let loaded: Int
+    /// Сторона реализации на загрузке.
+    let loaded_impl: Int?
+    /// Сверка на площадке: приезд и демонтаж.
+    let arrived: Int?
+    let dismantled: Int?
     let returned: Int
+
+    /// Сколько отмечено в конкретном чеклисте.
+    func done(_ kind: EquipCheckKind) -> Int {
+        switch kind {
+        case .loaded:     return loaded
+        case .loadedImpl: return loaded_impl ?? 0
+        case .arrived:    return arrived ?? 0
+        case .dismantled: return dismantled ?? 0
+        case .returned:   return returned
+        }
+    }
 }
 
 struct StagesDTO: Decodable {
@@ -340,6 +473,8 @@ struct CheckinDTO: Decodable, Identifiable {
     let edited_by: String?
     let edited_at: String?
     let edited_what: String?
+    /// Селфи с площадки при отметке — подписанная ссылка (ключ наружу не отдают).
+    let photo_url: String?
 
     /// Смену правили задним числом — строкой под отметкой.
     var editNote: String? {
@@ -363,9 +498,18 @@ struct EquipmentDTO: Decodable, Identifiable {
     let name: String
     let qty: Int?
     let crm_url: String?
-    // Чеклист: отметки на погрузке и на приёмке — кто и когда.
+    // Чеклисты: загрузка (склад и реализация), сверка на приезде и на демонтаже,
+    // приёмка — кто и когда отметил.
     let loaded_at: String?
     let loaded_by: String?
+    /// Сторона реализации на загрузке: склад выдал, реализация забрала.
+    let loaded_impl_at: String?
+    let loaded_impl_by: String?
+    /// Сверка оборудования на площадке — ведёт старший.
+    let arrived_at: String?
+    let arrived_by: String?
+    let dismantled_at: String?
+    let dismantled_by: String?
     let returned_at: String?
     let returned_by: String?
     /// Есть ли претензия по этой позиции: filed | sent | closed. Пусто — претензии нет.
@@ -375,12 +519,25 @@ struct EquipmentDTO: Decodable, Identifiable {
 
     /// Отмечена ли позиция в чеклисте нужного вида.
     func isChecked(_ kind: EquipCheckKind) -> Bool {
-        kind == .loaded ? loaded_at != nil : returned_at != nil
+        switch kind {
+        case .loaded:     return loaded_at != nil
+        case .loadedImpl: return loaded_impl_at != nil
+        case .arrived:    return arrived_at != nil
+        case .dismantled: return dismantled_at != nil
+        case .returned:   return returned_at != nil
+        }
     }
 
     /// Кто отметил — показываем рядом с галочкой.
     func checkedBy(_ kind: EquipCheckKind) -> String? {
-        let who = kind == .loaded ? loaded_by : returned_by
+        let who: String?
+        switch kind {
+        case .loaded:     who = loaded_by
+        case .loadedImpl: who = loaded_impl_by
+        case .arrived:    who = arrived_by
+        case .dismantled: who = dismantled_by
+        case .returned:   who = returned_by
+        }
         return (who?.isEmpty == false) ? who : nil
     }
 
@@ -399,15 +556,59 @@ struct EquipmentDTO: Decodable, Identifiable {
     }
 }
 
-/// Какой из двух чеклистов: погрузка в машину или приёмка обратно на склад.
+/// Какой чеклист оборудования.
+///
+/// Загрузка отмечается дважды: склад — что выдал, реализация — что забрала.
+/// Смысл двойной отметки в том, что подпись стоит у обоих, поэтому отметить за
+/// другую сторону нельзя. На площадке оборудование сверяет старший — на приезде
+/// и на демонтаже; приёмка на складе одна.
 enum EquipCheckKind: String, Identifiable {
-    case loaded, returned
+    case loaded
+    case loadedImpl = "loaded_impl"
+    case arrived
+    case dismantled
+    case returned
 
     var id: String { rawValue }
 
-    var title: String { self == .loaded ? "Чеклист погрузки" : "Чеклист приёма" }
-    var stage: String { self == .loaded ? "load" : "accept" }
-    var icon: String { self == .loaded ? "shippingbox" : "arrow.down.circle" }
+    var title: String {
+        switch self {
+        case .loaded:     return "Загрузка · склад"
+        case .loadedImpl: return "Загрузка · реализация"
+        case .arrived:    return "Сверка на приезде"
+        case .dismantled: return "Сверка на демонтаже"
+        case .returned:   return "Чеклист приёмки"
+        }
+    }
+
+    /// Какой этап держит этот чеклист.
+    var stage: String {
+        switch self {
+        case .loaded, .loadedImpl: return "load"
+        case .arrived:             return "arrive"
+        case .dismantled:          return "dismantle"
+        case .returned:            return "accept"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .loaded, .loadedImpl: return "shippingbox"
+        case .arrived:             return "checklist"
+        case .dismantled:          return "wrench.and.screwdriver"
+        case .returned:            return "arrow.down.circle"
+        }
+    }
+
+    /// Кто отмечает эту половину — подсказка тем, кому кнопки недоступны.
+    var owner: String {
+        switch self {
+        case .loaded:              return "отмечает кладовщик"
+        case .loadedImpl:          return "отмечает админ чата"
+        case .arrived, .dismantled: return "отмечает старший"
+        case .returned:            return "отмечает кладовщик"
+        }
+    }
 }
 
 struct AddEquipmentRequest: Encodable {
@@ -1003,6 +1204,14 @@ extension Chat {
         self.endsAt = DateParse.iso(event.ends_at)
         self.isChatAdmin = event.my_chat_admin ?? false
         self.myRole = event.my_role
+        self.isSystem = event.system ?? false
+        self.address = event.address
+        self.crmURL = event.crm_url.flatMap { URL(string: $0) }
+        // Время последнего сообщения сервер теперь отдаёт сам — без него список
+        // сортировался по «нет даты» и тасовался при каждом обновлении.
+        if lastDate == nil, let at = DateParse.iso(event.last_at) {
+            self.lastMessageDate = at
+        }
         self.tags = (event.tags ?? []).map { ChatTag(name: $0.name, colorHex: $0.color) }
         self.needsPhoto = event.needs_photo ?? false
         self.needsReport = event.needs_report ?? false

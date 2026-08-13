@@ -36,6 +36,12 @@ struct Chat: Identifiable, Codable, Equatable, Hashable {
     var isChatAdmin: Bool = false
     /// Моя роль в составе мероприятия (`my_role`) — из списка мероприятий.
     var myRole: String? = nil
+    /// Служебный чат («Жалобы»): личные входящие, а не мероприятие. Ни этапов,
+    /// ни смен, ни состава в нём нет — только карточки, которые надо разобрать.
+    var isSystem: Bool = false
+    /// Площадка мероприятия и ссылка на сделку — из CRM.
+    var address: String? = nil
+    var crmURL: URL? = nil
 
     /// Плашка своей роли в списке чатов: «участника» не рисуем — это шум.
     var myRoleChip: EventRole? {

@@ -13,6 +13,11 @@ struct EventInfoView: View {
     var canDocs: Bool = false
     /// Претензии — старший и кладовщик: он принимает оборудование обратно.
     var canClaims: Bool = false
+    /// Опрос клиента: выдать ссылку и посмотреть отзывы (`me_rights.review`).
+    var canReview: Bool = false
+    /// Площадка и ссылка на сделку — приходят из CRM вместе с мероприятием.
+    var address: String?
+    var crmURL: URL?
     /// Подтема «Претензия» — туда уходит комментарий при урегулировании.
     var claimTopicId: Int?
     /// Фото с мероприятия запрещено использовать (галочка ниже).
@@ -37,6 +42,7 @@ struct EventInfoView: View {
 
     @State private var showDocuments = false
     @State private var showClaims = false
+    @State private var showReview = false
     /// Метки и признаки мероприятия — их надо сохранить вместе с галочкой фото.
     @State private var currentTagIds: [Int] = []
     @State private var needsPhoto = false
@@ -52,6 +58,7 @@ struct EventInfoView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Spacing.m) {
                             if let errorText { ErrorBanner(text: errorText) }
+                            if address?.isEmpty == false || crmURL != nil { dealCard }
                             restrictedCard
                             sectionsCard
                             if canInvite { inviteCard }
@@ -76,6 +83,45 @@ struct EventInfoView: View {
                 ClaimsView(dealId: dealId, isChatAdmin: isChatAdmin || canClaims,
                            claimTopicId: claimTopicId)
                     .environmentObject(session)
+            }
+            .sheet(isPresented: $showReview) {
+                ClientReviewView(dealId: dealId, eventTitle: eventTitle)
+            }
+        }
+    }
+
+    /// Данные из сделки: площадка и сама сделка в CRM. Адрес — ссылкой на карты:
+    /// на выезде его первым делом копируют в навигатор.
+    private var dealCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                if let address, !address.isEmpty {
+                    Button {
+                        let query = address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                        if let url = URL(string: "https://yandex.ru/maps/?text=\(query)") { openURL(url) }
+                    } label: {
+                        HStack(alignment: .top, spacing: Spacing.s) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(Theme.accent).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Площадка").font(.caption2).foregroundStyle(Theme.textSecondary)
+                                Text(address).font(Typography.callout).foregroundStyle(Theme.accent)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let crmURL {
+                    Button { openURL(crmURL) } label: {
+                        Label("Открыть сделку в CRM", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }
@@ -123,6 +169,16 @@ struct EventInfoView: View {
                            hint: "Ущерб и утеря по позициям оборудования")
             }
             .buttonStyle(PressableStyle())
+
+            // Опрос ведёт менеджер — с клиентом общается он, а в самом чате может
+            // быть кем угодно. Поэтому право отдельное (`me_rights.review`).
+            if canReview {
+                Button { showReview = true } label: {
+                    sectionRow("Опрос клиента", icon: "star.bubble",
+                               hint: "Разовая ссылка, четыре оценки, отзыв в чат")
+                }
+                .buttonStyle(PressableStyle())
+            }
         }
     }
 

@@ -126,7 +126,9 @@ final class MockEventInfoService: EventInfoServicing {
     func equipment(dealId: String) async -> [EquipmentDTO] { [] }
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO {
         EquipmentDTO(id: 0, name: name, qty: qty, crm_url: nil,
-                     loaded_at: nil, loaded_by: nil, returned_at: nil, returned_by: nil,
+                     loaded_at: nil, loaded_by: nil, loaded_impl_at: nil, loaded_impl_by: nil,
+                     arrived_at: nil, arrived_by: nil, dismantled_at: nil, dismantled_by: nil,
+                     returned_at: nil, returned_by: nil,
                      claim_status: nil, claim_note: nil)
     }
     func deleteEquipment(dealId: String, itemId: Int) async throws {}

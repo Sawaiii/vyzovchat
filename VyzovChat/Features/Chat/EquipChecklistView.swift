@@ -152,10 +152,10 @@ struct EquipChecklistView: View {
                 .font(Typography.callout)
                 .foregroundStyle(checked == items.count ? Theme.success : Theme.textPrimary)
             Spacer()
-            // Не «только просмотр», а почему: галочки ставит склад, и без
-            // объяснения неактивные строки выглядят как поломка.
+            // Не «только просмотр», а почему: у каждой половины чеклиста своя
+            // сторона, и без объяснения неактивные строки выглядят как поломка.
             if !canCheck {
-                Text("отмечает кладовщик").font(.caption2).foregroundStyle(Theme.textSecondary)
+                Text(kind.owner).font(.caption2).foregroundStyle(Theme.textSecondary)
             }
         }
         .padding(Spacing.s)
@@ -210,7 +210,9 @@ struct EquipChecklistView: View {
             .buttonStyle(.plain)
             .disabled(!canCheck || busyId != nil)
 
-            if canClaim, kind == .returned, !item.hasClaim, busyId == nil {
+            // Претензию заводим там, где недостачу и видно: на приёмке и на
+            // сверке после демонтажа.
+            if canClaim, kind == .returned || kind == .dismantled, !item.hasClaim, busyId == nil {
                 Button { claiming = item } label: {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(Theme.warning)
@@ -259,7 +261,13 @@ struct EquipChecklistView: View {
             await load()
             onChanged()
         } catch {
-            errorText = "Не удалось отметить позицию. Проверьте связь и попробуйте ещё раз."
+            // Свою половину отмечает только своя сторона — отметить за другого
+            // нельзя, в этом и смысл двойного чеклиста загрузки.
+            if case let APIError.http(_, message) = error, message == "check_forbidden" {
+                errorText = "Эту половину чеклиста отмечает другая сторона: \(kind.owner)."
+            } else {
+                errorText = "Не удалось отметить позицию. Проверьте связь и попробуйте ещё раз."
+            }
             Haptics.warning()
         }
     }

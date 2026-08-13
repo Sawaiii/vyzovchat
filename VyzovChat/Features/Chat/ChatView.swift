@@ -285,7 +285,7 @@ struct ChatView: View {
         .sheet(item: $checklistKind) { kind in
             EquipChecklistView(dealId: model.chat.dealId,
                                kind: kind,
-                               canCheck: model.canCheckEquipment,
+                               canCheck: model.canCheck(kind),
                                canEdit: model.canEditEquipment,
                                canClaim: model.canClaims) {
                 Task { await model.loadStages() }
@@ -298,7 +298,10 @@ struct ChatView: View {
                           canInvite: model.canInvite,
                           canDocs: model.canDocs,
                           canClaims: model.canClaims,
-                          claimTopicId: model.claimTopicId)
+                          canReview: model.canReview,
+                          claimTopicId: model.claimTopicId,
+                          address: model.chat.address,
+                          crmURL: model.chat.crmURL)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showShifts) {

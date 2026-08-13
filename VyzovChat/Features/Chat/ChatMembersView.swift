@@ -18,6 +18,8 @@ struct ChatMembersView: View {
     @State private var members: [User] = []
     @State private var isLoading = true
     @State private var showAdd = false
+    /// На кого пишем жалобу.
+    @State private var complainAbout: User?
 
     var body: some View {
         NavigationStack {
@@ -40,6 +42,16 @@ struct ChatMembersView: View {
                                                 ForEach(EventRole.allCases) { role in
                                                     Label(role.title, systemImage: role.icon).tag(role)
                                                 }
+                                            }
+                                        }
+                                        // Жалоба — всегда в рамках мероприятия:
+                                        // «плохо работал» без привязки разбирать
+                                        // бессмысленно. Уходит тому, кто завёл чат.
+                                        if user.id != session.currentUser?.id {
+                                            Button {
+                                                complainAbout = user
+                                            } label: {
+                                                Label("Пожаловаться", systemImage: "exclamationmark.bubble")
                                             }
                                         }
                                         if canManage, user.id != session.currentUser?.id {
@@ -71,6 +83,9 @@ struct ChatMembersView: View {
                     Task { await load() }
                 }
                 .environmentObject(session)
+            }
+            .sheet(item: $complainAbout) { user in
+                ComplaintComposer(dealId: dealId, about: user)
             }
             .task { await load() }
         }

@@ -427,14 +427,17 @@ struct MessageBubble: View {
     /// (в базе им числится создатель чата), у важного он виден — по объявлению
     /// задают вопросы. Внизу — отметка «Ознакомлен» и счётчик отметившихся.
     private var noticeCard: some View {
-        let tint = message.isAlarm ? Theme.warning : Theme.accent
+        let tint = noticeStyle.color
         return VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: 6) {
-                Image(systemName: message.isAlarm ? "exclamationmark.triangle.fill" : "doc.text.fill")
+                Image(systemName: noticeStyle.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text(message.isAlarm ? "Важное" : "Вводные из сделки")
+                Text(noticeStyle.title)
                     .font(.system(size: 11, weight: .semibold))
-                if message.isAlarm, let author = message.senderName, !author.isEmpty {
+                // У важного и жалобы автор виден: по ним задают вопросы. У вводных
+                // из сделки и отзыва клиента автора нет — это не чья-то реплика.
+                if message.isAlarm || message.isComplaint,
+                   let author = message.senderName, !author.isEmpty {
                     Text("· " + author).font(.system(size: 11))
                         .foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
@@ -477,6 +480,17 @@ struct MessageBubble: View {
                 .stroke(tint.opacity(0.35), lineWidth: 0.5)
         )
         .padding(.vertical, Spacing.xs)
+    }
+
+    /// Чем врезка подписана и какого она цвета. Жалоба и важное — янтарём, чтобы
+    /// не спутались с вводными из сделки; отзыв клиента — зелёным.
+    private var noticeStyle: (title: String, icon: String, color: Color) {
+        switch message.systemKind {
+        case "alarm":     return ("Важное", "exclamationmark.triangle.fill", Theme.warning)
+        case "complaint": return ("Жалоба", "exclamationmark.bubble.fill", Theme.danger)
+        case "review":    return ("Отзыв клиента", "star.fill", Theme.success)
+        default:          return ("Вводные из сделки", "doc.text.fill", Theme.accent)
+        }
     }
 
     /// «ознакомились 1 из 4» — одинокая цифра ни о чём не говорит.

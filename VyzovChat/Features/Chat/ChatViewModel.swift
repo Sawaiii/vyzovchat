@@ -56,7 +56,20 @@ final class ChatViewModel: ObservableObject {
     var canPickForReport: Bool { rights?.otbor_all ?? isChatAdmin }
     var canCheckin: Bool { rights?.checkin ?? true }
     var canEditEquipment: Bool { rights?.equip_edit ?? isChatAdmin }
-    var canCheckEquipment: Bool { rights?.equip_check ?? isChatAdmin }
+
+    /// Можно ли ставить галочки в конкретном чеклисте. Свою половину отмечает
+    /// только своя сторона: в этом весь смысл двойного чеклиста загрузки —
+    /// подпись стоит и у склада, и у реализации.
+    func canCheck(_ kind: EquipCheckKind) -> Bool {
+        switch kind {
+        case .loaded, .returned:    return rights?.equip_check ?? false
+        case .loadedImpl:           return rights?.equip_check_impl ?? isChatAdmin
+        case .arrived, .dismantled: return rights?.equip_check_site ?? isChatAdmin
+        }
+    }
+
+    /// Опрос клиента: выдать ссылку и посмотреть отзывы.
+    var canReview: Bool { rights?.review ?? isChatAdmin }
     var canAssignRoles: Bool { rights?.assign ?? false }
     /// Объявить важное с отметкой «Ознакомлен» — админ чата, старший, наблюдатель.
     var canAlarm: Bool { rights?.alarm ?? false }
@@ -615,10 +628,12 @@ final class ChatViewModel: ObservableObject {
         return all[idx - 1] == stage
     }
 
-    /// Сколько позиций осталось отметить в чеклисте этапа.
+    /// Сколько позиций осталось отметить, чтобы закрыть этап. У загрузки чеклиста
+    /// два — считаем по худшему: этап ждёт обе стороны.
     func checklistLeft(_ stage: EventStage) -> Int? {
-        guard let kind = stage.checklist, let p = equipProgress, p.total > 0 else { return nil }
-        let done = kind == .loaded ? p.loaded : p.returned
+        let kinds = stage.checklists
+        guard !kinds.isEmpty, let p = equipProgress, p.total > 0 else { return nil }
+        let done = kinds.map { p.done($0) }.min() ?? 0
         return max(0, p.total - done)
     }
 

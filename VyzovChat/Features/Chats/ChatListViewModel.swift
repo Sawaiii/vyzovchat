@@ -15,7 +15,12 @@ final class ChatListViewModel: ObservableObject {
     /// Когда последний раз перезагружались из-за переподключения сокета.
     private var lastReconnectReload: Date?
 
-    var activeEventChats: [Chat] { eventChats.filter { !$0.isArchived } }
+    /// Служебный чат («Жалобы») держим сверху: это личные входящие, которые надо
+    /// разобрать, и теряться среди мероприятий они не должны.
+    var activeEventChats: [Chat] {
+        let list = eventChats.filter { !$0.isArchived }
+        return list.filter(\.isSystem) + list.filter { !$0.isSystem }
+    }
     var archivedEventChats: [Chat] { eventChats.filter { $0.isArchived } }
 
     /// Перезагрузка по переподключению сокета — не чаще, чем раз в 15 секунд.

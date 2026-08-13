@@ -37,6 +37,13 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     /// Реализатор — полный доступ к Диску/Фотобанку и к чатам своей компании.
     var isImplementer: Bool { globalRole == "implementer" }
 
+    /// Не заполнены почта и телефон. Без них человека не найти вне чата и не
+    /// восстановить ему пароль — поэтому в карточке и на аватарке висит знак.
+    var contactsMissing: Bool {
+        phone.trimmingCharacters(in: .whitespaces).isEmpty
+            || (email ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     /// Права уровня админа чата внутри мероприятия.
     ///
     /// Склад сюда больше не входит: сервер с 4 августа 2026 считает админом чата

@@ -10,7 +10,9 @@ protocol ShiftsServicing {
     /// Смены мероприятия. Обычный сотрудник видит только свою,
     /// куратор — ещё и тех, кого позвал сам; админ чата — все.
     func shifts(dealId: String) async -> [CheckinDTO]
-    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO
+    /// Открыть смену. Селфи с площадки обязательно: геопозицию в телефоне подменить
+    /// легко, снимок на фоне монтажа — нет. `photoKey` — ключ из presign.
+    func checkIn(dealId: String, lat: Double, lng: Double, photoKey: String) async throws -> CheckinDTO
     func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO
     /// Отметка за сотрудника (админ чата). Геометки здесь нет и быть не может —
     /// админ не на месте сотрудника.
@@ -33,6 +35,8 @@ enum ShiftError: LocalizedError {
     case notCheckedIn
     case warehouse
     case notMember
+    case photoRequired
+    case badPhoto
 
     var errorDescription: String? {
         switch self {
@@ -41,6 +45,10 @@ enum ShiftError: LocalizedError {
         case .notCheckedIn: return "Смена ещё не открыта"
         case .warehouse:    return "Складу смены не отмечают"
         case .notMember:    return "Вы не в составе этого мероприятия"
+        case .photoRequired:
+            return "Нужно селфи с площадки: без снимка отметить смену нельзя."
+        case .badPhoto:
+            return "Снимок не подошёл. Сделайте фото заново."
         }
     }
 
@@ -49,6 +57,8 @@ enum ShiftError: LocalizedError {
         guard case let APIError.http(_, message) = error, let message else { return error }
         switch message {
         case "geo_required":             return ShiftError.geoUnavailable
+        case "photo_required":           return ShiftError.photoRequired
+        case "bad_photo":                return ShiftError.badPhoto
         case "not_checked_in":           return ShiftError.notCheckedIn
         case "no_checkin_for_warehouse": return ShiftError.warehouse
         case "not_member":               return ShiftError.notMember
@@ -60,6 +70,8 @@ enum ShiftError: LocalizedError {
 private struct GeoRequest: Encodable {
     let lat: Double
     let lng: Double
+    /// Селфи с площадки — только при открытии смены.
+    var photo_key: String? = nil
 }
 
 final class RealShiftsService: ShiftsServicing {
@@ -70,8 +82,9 @@ final class RealShiftsService: ShiftsServicing {
         return dto.checkins ?? []
     }
 
-    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO {
-        try await post("/api/events/\(dealId)/checkin", body: GeoRequest(lat: lat, lng: lng))
+    func checkIn(dealId: String, lat: Double, lng: Double, photoKey: String) async throws -> CheckinDTO {
+        try await post("/api/events/\(dealId)/checkin",
+                       body: GeoRequest(lat: lat, lng: lng, photo_key: photoKey))
     }
 
     func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO {
@@ -129,7 +142,9 @@ final class RealShiftsService: ShiftsServicing {
 
 final class MockShiftsService: ShiftsServicing {
     func shifts(dealId: String) async -> [CheckinDTO] { [] }
-    func checkIn(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO { throw ShiftError.geoUnavailable }
+    func checkIn(dealId: String, lat: Double, lng: Double, photoKey: String) async throws -> CheckinDTO {
+        throw ShiftError.geoUnavailable
+    }
     func checkOut(dealId: String, lat: Double, lng: Double) async throws -> CheckinDTO { throw ShiftError.geoUnavailable }
     func checkInFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }
     func checkOutFor(dealId: String, workerId: String) async throws -> CheckinDTO { throw ShiftError.notMember }

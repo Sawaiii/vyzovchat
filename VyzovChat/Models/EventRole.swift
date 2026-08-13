@@ -80,37 +80,46 @@ struct RoleChip: View {
 
 /// Этап мероприятия. Порядок строгий: перепрыгнуть нельзя, снять можно только
 /// последний отмеченный — иначе в цепочке появляется дыра вида «приёмка есть,
-/// погрузки нет».
+/// загрузки нет».
+///
+/// Этапов семь (с 12 августа 2026): к прежним пяти добавились «Приезд / сверка» и
+/// «Работа». Ключ `ready` остался от прежней «Готовности», а зовётся теперь
+/// «Сдача площадки» — переименовывать его на сервере не стали.
 enum EventStage: String, CaseIterable, Identifiable {
-    case load, mount, ready, dismantle, accept
+    case load, arrive, mount, ready, work, dismantle, accept
 
     var id: String { rawValue }
 
-    /// Названия те же, что сервер пишет в чат («закрыл(а) этап «Приём»») —
+    /// Названия те же, что сервер пишет в чат («закрыл(а) этап «Приёмка»») —
     /// иначе полоса этапов и строка о ней в ленте называют одно разными словами.
     var title: String {
         switch self {
-        case .load:      return "Погрузка"
-        case .mount:     return "Приезд/монтаж"
-        case .ready:     return "Готовность"
-        case .dismantle: return "Демонтаж"
-        case .accept:    return "Приём"
+        case .load:      return "Загрузка"
+        case .arrive:    return "Приезд / сверка"
+        case .mount:     return "Монтаж"
+        case .ready:     return "Сдача площадки"
+        case .work:      return "Работа"
+        case .dismantle: return "Демонтаж / сверка"
+        case .accept:    return "Приёмка"
         }
     }
 
-    /// Кто закрывает этап. Погрузку и приёмку — только кладовщик: оборудование
-    /// принимает и выдаёт склад, и подменить его не может даже админ чата.
+    /// Кто закрывает этап. Ход мероприятия ведёт реализация (админ чата) — за ней
+    /// всё, кроме приёмки: оборудование возвращается на склад, и закрыть приёмку
+    /// может только кладовщик.
     var owner: String {
-        checklist == nil ? "админ чата или старший" : "кладовщик"
+        self == .accept ? "кладовщик" : "админ чата"
     }
 
-    /// У погрузки и приёмки есть свой чеклист оборудования — без него этап
-    /// не закрыть.
-    var checklist: EquipCheckKind? {
+    /// Чеклисты, которые держат этап: пока оборудование не отмечено целиком,
+    /// этап не закрыть. У загрузки чеклиста два — склад выдал и реализация забрала.
+    var checklists: [EquipCheckKind] {
         switch self {
-        case .load:   return .loaded
-        case .accept: return .returned
-        default:      return nil
+        case .load:      return [.loaded, .loadedImpl]
+        case .arrive:    return [.arrived]
+        case .dismantle: return [.dismantled]
+        case .accept:    return [.returned]
+        default:         return []
         }
     }
 }

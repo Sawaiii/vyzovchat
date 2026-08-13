@@ -39,11 +39,17 @@ struct Message: Identifiable, Codable, Equatable, Hashable {
     var ackTotal: Int = 0
     var ackMe: Bool = false
 
-    /// Врезка, а не пузырь: вводные из сделки и важное объявление — это уведомление,
-    /// а не чья-то реплика в переписке.
-    var isNotice: Bool { systemKind == "crm" || systemKind == "alarm" }
+    /// Врезка, а не пузырь: вводные из сделки, важное объявление, жалоба и отзыв
+    /// клиента — это уведомления, а не реплики в переписке.
+    var isNotice: Bool {
+        ["crm", "alarm", "complaint", "review"].contains(systemKind ?? "")
+    }
     /// Важное от руководства (у него, в отличие от вводных, виден автор).
     var isAlarm: Bool { systemKind == "alarm" }
+    /// Жалоба в служебном чате.
+    var isComplaint: Bool { systemKind == "complaint" }
+    /// Отзыв клиента по итогам опроса.
+    var isReview: Bool { systemKind == "review" }
 
     enum Kind: String, Codable {
         case text

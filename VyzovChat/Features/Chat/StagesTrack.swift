@@ -34,14 +34,14 @@ struct StagesTrack: View {
     private func step(_ stage: EventStage, number: Int) -> some View {
         let done = isDone(stage)
         let isNext = model.nextStage == stage
-        let tappable = model.canMark(stage) || model.canUndo(stage) || stage.checklist != nil
+        let tappable = model.canMark(stage) || model.canUndo(stage) || !stage.checklists.isEmpty
 
         return Button {
-            // Снять отметку — первым делом: у погрузки и приёмки нажатие вело
+            // Снять отметку — первым делом: у этапов с чеклистом нажатие вело
             // в чеклист всегда, и отменить случайно закрытый этап было нечем.
             if model.canUndo(stage) {
                 Task { await model.toggleStage(stage) }
-            } else if let kind = stage.checklist {
+            } else if let kind = defaultChecklist(for: stage) {
                 // Закрыть этап всё равно нельзя, пока в чеклисте есть
                 // неотмеченные позиции, — ведём туда, а не в отказ.
                 onOpenChecklist(kind)
@@ -82,7 +82,8 @@ struct StagesTrack: View {
                     Label("Отметить пройденным", systemImage: "checkmark.circle")
                 }
             }
-            if let kind = stage.checklist {
+            // У загрузки чеклиста два — обе половины в меню отдельными пунктами.
+            ForEach(stage.checklists) { kind in
                 Button { onOpenChecklist(kind) } label: {
                     Label(kind.title, systemImage: kind.icon)
                 }
@@ -116,10 +117,20 @@ struct StagesTrack: View {
 
     private func isDone(_ stage: EventStage) -> Bool { model.stagesDone[stage.rawValue] != nil }
 
+    /// Какой чеклист открыть по тапу на этап: свой, если он у нас есть, иначе
+    /// первый — посмотреть чужую половину можно, отметить нет.
+    private func defaultChecklist(for stage: EventStage) -> EquipCheckKind? {
+        let kinds = stage.checklists
+        return kinds.first { model.canCheck($0) } ?? kinds.first
+    }
+
     /// «3/7» у этапов с чеклистом — и только когда оборудование вообще заведено.
+    /// У загрузки считаем по отстающей стороне: этап ждёт обе.
     private func counter(for stage: EventStage) -> String? {
-        guard let kind = stage.checklist, let p = model.equipProgress, p.total > 0 else { return nil }
-        return "\(kind == .loaded ? p.loaded : p.returned)/\(p.total)"
+        let kinds = stage.checklists
+        guard !kinds.isEmpty, let p = model.equipProgress, p.total > 0 else { return nil }
+        let done = kinds.map { p.done($0) }.min() ?? 0
+        return "\(done)/\(p.total)"
     }
 
     private func counterIsFull(_ stage: EventStage) -> Bool { (model.checklistLeft(stage) ?? 1) == 0 }
