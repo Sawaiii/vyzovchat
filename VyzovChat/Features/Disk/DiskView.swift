@@ -31,7 +31,6 @@ struct DiskView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .navigationBarTitleDisplayMode(.inline)
-            .appNavigationBar()
             // Внутри стека: полоса уезжает вместе с экраном при переходе в папку.
             .appTabBar()
             .toolbar { ToolbarItem(placement: .principal) { modePicker } }

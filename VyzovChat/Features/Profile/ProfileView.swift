@@ -55,7 +55,6 @@ struct ProfileView: View {
             .navigationTitle("Профиль")
             // Крупный заголовок здесь дублировал имя под аватаром.
             .navigationBarTitleDisplayMode(.inline)
-            .appNavigationBar()
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
         }
@@ -93,6 +92,9 @@ struct ProfileView: View {
                 Text(user.position).font(Typography.subheadline).foregroundStyle(Theme.textSecondary)
             }
         }
+        // Аватар — первое, что под панелью: ему воздуха нужно больше, чем
+        // карточке или полосе чипов, иначе кружок липнет к панели.
+        .padding(.top, Spacing.s)
     }
 
     private func avatarImage(_ user: User) -> some View {

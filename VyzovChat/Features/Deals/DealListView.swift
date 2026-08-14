@@ -65,7 +65,6 @@ struct DealListView: View {
             .navigationTitle("Заказы")
             // Крупный заголовок съедал полсотни точек над полосой компаний.
             .navigationBarTitleDisplayMode(.inline)
-            .appNavigationBar()
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
             .toolbar {

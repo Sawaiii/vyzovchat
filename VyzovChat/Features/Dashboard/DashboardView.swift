@@ -51,7 +51,6 @@ struct DashboardView: View {
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
             .navigationBarTitleDisplayMode(.inline)
-            .appNavigationBar()
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("", selection: $mode) {
