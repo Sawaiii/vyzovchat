@@ -48,9 +48,13 @@ struct ChatListView: View {
                         pager
                     }
                 }
-                .padding(.top, Spacing.s)
+                .padding(.top, metrics.contentTopPadding)
             }
             .navigationTitle("Чаты")
+            // Крупный заголовок съедал полсотни точек над списком: название
+            // вкладки и так написано в полосе внизу. Отступ под панелью —
+            // от устройства: у «островка» строка состояния и так выше.
+            .navigationBarTitleDisplayMode(.inline)
             // Внутри стека, а не снаружи: полоса вкладок должна уезжать вместе
             // с этим экраном, когда поверх него открывают чат.
             .appTabBar()

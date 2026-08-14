@@ -59,10 +59,12 @@ struct DealListView: View {
                         if segments.count > 1 { segmentBar }
                         pager
                     }
-                    .padding(.top, Spacing.s)
+                    .padding(.top, metrics.contentTopPadding)
                 }
             }
             .navigationTitle("Заказы")
+            // Крупный заголовок съедал полсотни точек над полосой компаний.
+            .navigationBarTitleDisplayMode(.inline)
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
             .toolbar {

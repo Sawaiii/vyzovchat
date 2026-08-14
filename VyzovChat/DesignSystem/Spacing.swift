@@ -16,16 +16,52 @@ enum Spacing {
 /// получают чуть меньшие отступы, крупные Pro Max — чуть большие.
 struct AdaptiveMetrics {
     let width: CGFloat
+    /// Верхняя безопасная зона устройства — по ней и различаем «островок»,
+    /// «бровь» и старый экран с кнопкой.
+    let topInset: CGFloat
+
+    init(width: CGFloat, topInset: CGFloat = DeviceInsets.notchTop) {
+        self.width = width
+        self.topInset = topInset
+    }
 
     var isCompact: Bool { width <= 375 }        // SE, mini, 12/13 mini
     var isLarge: Bool { width >= 428 }          // Pro Max, Plus
+
+    /// «Островок»: 14 Pro и новее — 59 pt и выше.
+    var hasDynamicIsland: Bool { topInset >= 55 }
+    /// «Бровь»: X…14 — 44…50 pt.
+    var hasNotch: Bool { topInset >= 30 && topInset < 55 }
 
     var horizontalPadding: CGFloat {
         isCompact ? Spacing.m : (isLarge ? Spacing.l : Spacing.m + 4)
     }
 
+    /// Отступ от панели навигации до содержимого вкладки.
+    ///
+    /// Считаем от устройства, а не одним числом на всех: у «островка» строка
+    /// состояния на 12 pt выше «брови», и панель уже уехала вниз — добавлять
+    /// сверху нечего. У «брови» добавляем немного, у экрана с кнопкой (SE)
+    /// строка состояния низкая, там отступ нужнее всего.
+    var contentTopPadding: CGFloat {
+        if hasDynamicIsland { return 0 }
+        return hasNotch ? Spacing.xxs : Spacing.xs
+    }
+
     var cardCorner: CGFloat {
         isCompact ? Theme.cornerMedium : Theme.cornerLarge
+    }
+}
+
+/// Безопасные зоны устройства. Берём у активного окна: метрики нужны и там,
+/// где `GeometryReader` заводить незачем.
+enum DeviceInsets {
+    static var notchTop: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.top ?? 47
     }
 }
 

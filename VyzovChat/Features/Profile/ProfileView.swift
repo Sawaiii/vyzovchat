@@ -48,10 +48,13 @@ struct ProfileView: View {
                         signOutButton
                     }
                     .padding(.horizontal, metrics.horizontalPadding)
-                    .padding(.vertical, Spacing.m)
+                    .padding(.top, metrics.contentTopPadding)
+                    .padding(.bottom, Spacing.m)
                 }
             }
             .navigationTitle("Профиль")
+            // Крупный заголовок здесь дублировал имя под аватаром.
+            .navigationBarTitleDisplayMode(.inline)
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
         }
@@ -89,7 +92,6 @@ struct ProfileView: View {
                 Text(user.position).font(Typography.subheadline).foregroundStyle(Theme.textSecondary)
             }
         }
-        .padding(.top, Spacing.s)
     }
 
     private func avatarImage(_ user: User) -> some View {
