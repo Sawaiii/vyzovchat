@@ -162,6 +162,9 @@ struct PhotobankBrowser: View {
                 }
             }
         }
+        // Высота ровно под два ряда, и никакого отскока: облако тегов ездит
+        // только вбок.
+        .scrollBounceBehavior(.basedOnSize, axes: [.horizontal, .vertical])
         .frame(height: Self.facetRowH * 2 + 6)
     }
 

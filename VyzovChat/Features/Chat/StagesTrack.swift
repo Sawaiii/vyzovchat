@@ -22,7 +22,7 @@ struct StagesTrack: View {
         }
         // Фон даёт общая шапка: своя подложка у каждой полосы и превращала
         // шапку в стопку приклеенных друг к другу полосок.
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .horizontalStrip()
     }
 
     private func arrow(before stage: EventStage) -> some View {

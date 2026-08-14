@@ -73,7 +73,7 @@ struct TopicBar: View {
             .padding(.horizontal, Spacing.m)
             .padding(.vertical, 4)
         }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .horizontalStrip()
         .background(Theme.panel.opacity(0.6))
     }
 

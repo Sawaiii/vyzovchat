@@ -76,6 +76,7 @@ struct AuditLogView: View {
             }
             .padding(.horizontal, metrics.horizontalPadding)
         }
+        .horizontalStrip()
         .padding(.top, Spacing.s)
     }
 

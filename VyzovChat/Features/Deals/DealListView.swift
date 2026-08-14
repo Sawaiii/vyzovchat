@@ -81,34 +81,43 @@ struct DealListView: View {
     /// синяя капсула перетекает между компаниями.
     private var segmentBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(segments, id: \.self) { seg in
-                    let isSelected = segment == seg
-                    Button {
-                        withAnimation(.smooth(duration: 0.25)) { segment = seg }
-                    } label: {
-                        Text(seg)
-                            .font(.caption.weight(isSelected ? .semibold : .regular))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                            .foregroundStyle(isSelected ? Theme.textOnAccent : Theme.textSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background {
-                                if isSelected {
-                                    Capsule().fill(Theme.accent)
-                                        .matchedGeometryEffect(id: "dealPill", in: segmentPill)
+            ScrollViewReader { proxy in
+                HStack(spacing: 4) {
+                    ForEach(segments, id: \.self) { seg in
+                        let isSelected = segment == seg
+                        Button {
+                            withAnimation(.smooth(duration: 0.25)) { segment = seg }
+                        } label: {
+                            Text(seg)
+                                .font(.caption.weight(isSelected ? .semibold : .regular))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .foregroundStyle(isSelected ? Theme.textOnAccent : Theme.textSecondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background {
+                                    if isSelected {
+                                        Capsule().fill(Theme.accent)
+                                            .matchedGeometryEffect(id: "dealPill", in: segmentPill)
+                                    }
                                 }
-                            }
-                            .contentShape(Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .id(seg)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(3)
+                .background(Theme.panel2, in: Capsule())
+                // Компанию переключают и свайпом списка — тогда её вкладка может
+                // оказаться за краем экрана. Подтягиваем выбранную к центру.
+                .onChange(of: segment) {
+                    withAnimation(.smooth(duration: 0.25)) { proxy.scrollTo(segment, anchor: .center) }
+                }
+                .onAppear { proxy.scrollTo(segment, anchor: .center) }
             }
-            .padding(3)
-            .background(Theme.panel2, in: Capsule())
         }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .horizontalStrip()
         .padding(.horizontal, metrics.horizontalPadding)
     }
 

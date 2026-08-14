@@ -81,13 +81,17 @@ struct ProfileExtrasSection: View {
         GlassCard {
             VStack(alignment: .leading, spacing: Spacing.s) {
                 Text("Награды").font(Typography.headline).foregroundStyle(Theme.textPrimary)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.xs), count: 3),
-                          spacing: Spacing.s) {
+                // Не сетка: в колонках по трети карточки значок 56 pt висел
+                // посреди своей ячейки, и первая награда уезжала от заголовка
+                // на добрых два сантиметра. Здесь значки идут подряд от левого
+                // края и переносятся, когда кончается строка.
+                FlowLayout(spacing: Spacing.s, lineSpacing: Spacing.s) {
                     ForEach(achievements) { award in
                         Button { shown = award } label: { AwardBadge(award: award) }
                             .buttonStyle(.plain)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -226,7 +230,9 @@ struct AwardBadge: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
-        .frame(maxWidth: .infinity)
+        // Ширина фиксированная: `FlowLayout` расставляет по собственному размеру
+        // элемента, и без неё значок был бы шириной со своё название.
+        .frame(width: 72)
     }
 }
 

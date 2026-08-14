@@ -23,6 +23,7 @@ struct CompanyPicker: View {
                     }
                     .padding(.horizontal, 1)
                 }
+                .horizontalStrip()
 
                 Text("Определяет папку выгрузки фото на общем диске.")
                     .font(Typography.caption).foregroundStyle(Theme.textSecondary)

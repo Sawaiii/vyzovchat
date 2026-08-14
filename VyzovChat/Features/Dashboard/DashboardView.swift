@@ -151,6 +151,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .horizontalStrip()
     }
 
     private func filterChip(_ title: String, count: Int, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -287,6 +288,7 @@ struct DashboardView: View {
                         }
                     }
                 }
+                .horizontalStrip()
             }
         }
     }

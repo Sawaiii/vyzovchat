@@ -110,6 +110,7 @@ struct PhotobankTagEditor: View {
                         }
                     }
                 }
+                .horizontalStrip()
             }
         }
     }
