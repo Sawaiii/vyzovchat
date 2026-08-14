@@ -39,7 +39,7 @@ struct DashboardView: View {
                     // Пейджер, а не switch: между «Отчётами» и «Сменами» должно
                     // листаться свайпом, как между темами чата и вкладками Диска.
                     TabView(selection: $mode) {
-                        page { reportsContent }.tag(Mode.reports)
+                        reportsPage.tag(Mode.reports)
                         // Смены — свой экран со сводкой за период; общий page
                         // с отступами ему не нужен.
                         ShiftsSummaryView().tag(Mode.shifts)
@@ -81,14 +81,29 @@ struct DashboardView: View {
 
     // MARK: - Отчёты
 
-    private var reportsContent: some View {
-        Group {
+    /// Подвкладки и фильтр компаний стоят НАД прокруткой. Внутри неё фильтр
+    /// перехватывал «потяни-обнови» списка: полоса тянулась вниз пальцем и
+    /// пробовала перезагрузить отчёты. Заодно фильтр теперь виден всегда.
+    private var reportsPage: some View {
+        VStack(spacing: Spacing.s) {
             // Две подстраницы, как в вебе: календарь и общий список.
             HStack(spacing: 4) {
                 subTab("Календарь", isOn: showCalendar) { showCalendar = true }
                 subTab("Все отчёты", isOn: !showCalendar) { showCalendar = false; selectedDay = nil }
             }
+            .padding(.horizontal, metrics.horizontalPadding)
 
+            if !showCalendar {
+                companyFilter.padding(.horizontal, metrics.horizontalPadding)
+            }
+
+            page { reportsContent }
+        }
+        .padding(.top, Spacing.s)
+    }
+
+    private var reportsContent: some View {
+        Group {
             if showCalendar {
                 ReportCalendar(days: daysByDate, month: $calendarMonth,
                                selected: selectedDay) { key in
@@ -100,7 +115,6 @@ struct DashboardView: View {
                     ForEach(dayEvents) { event in eventCard(event, company: nil) }
                 }
             } else {
-                companyFilter
                 if filteredEvents.isEmpty {
                     EmptyState(icon: "tray", title: "Отчётов нет",
                                message: "Здесь появятся мероприятия с отправленным фотоотчётом.")
@@ -266,29 +280,51 @@ struct DashboardView: View {
         }
     }
 
+    /// Сколько снимков показываем в карточке; остальные — в просмотрщике.
+    private static let photoPreviewLimit = 4
+
+    /// Плитка снимков отчёта — намеренно без прокрутки.
+    ///
+    /// Прокручиваемая полоса внутри списка перехватывала «потяни-обнови» и
+    /// тянулась вниз пальцем: убрать обновление у вложенной полосы нечем, а
+    /// вынести её из списка, как фильтр компаний, некуда — она внутри карточки.
+    /// Плитка эту развилку снимает: пары снимков хватает, чтобы понять, что в
+    /// отчёте, а нажатие открывает просмотрщик со всеми.
     private func photoStrip(_ event: DashEventDTO) -> some View {
         let photos = event.report_photos ?? []
+        let shown = Array(photos.prefix(Self.photoPreviewLimit))
+        let hidden = photos.count - shown.count
         return Group {
             if photos.isEmpty {
                 Text("Фото в отчёте нет.").font(.caption2).foregroundStyle(Theme.textSecondary)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(photos.enumerated()), id: \.offset) { idx, photo in
-                            Button { open(photos, at: idx) } label: {
-                                CachedAsyncImage(url: AppConfig.mediaURL(photo.thumb ?? photo.full)) {
-                                    $0.resizable().scaledToFill()
-                                } placeholder: {
-                                    Theme.panel2
-                                }
-                                .frame(width: 84, height: 84)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(Array(shown.enumerated()), id: \.offset) { idx, photo in
+                        Button { open(photos, at: idx) } label: {
+                            CachedAsyncImage(url: AppConfig.mediaURL(photo.thumb ?? photo.full)) {
+                                $0.resizable().scaledToFill()
+                            } placeholder: {
+                                Theme.panel2
                             }
-                            .buttonStyle(.plain)
+                            .frame(width: 84, height: 84)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay {
+                                // «+7» на последней плитке: столько снимков ещё
+                                // ждёт в просмотрщике.
+                                if hidden > 0, idx == shown.count - 1 {
+                                    ZStack {
+                                        Color.black.opacity(0.55)
+                                        Text("+\(hidden)")
+                                            .font(Typography.headline).foregroundStyle(.white)
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .horizontalStrip()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

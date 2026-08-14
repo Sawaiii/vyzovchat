@@ -34,11 +34,14 @@ struct AuditLogView: View {
                     if isLoading {
                         Spacer(); ProgressView().tint(Theme.accent); Spacer()
                     } else if entries.isEmpty {
-                        Spacer()
-                        EmptyState(icon: "list.bullet.rectangle",
-                                   title: "Записей нет",
-                                   message: "Здесь появится всё необратимое: удаления и отмены смен.")
-                        Spacer()
+                        ScrollView {
+                            EmptyState(icon: "list.bullet.rectangle",
+                                       title: "Записей нет",
+                                       message: "Здесь появится всё необратимое: удаления и отмены смен.")
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 120)
+                        }
+                        .refreshable { await load() }
                     } else {
                         ScrollView {
                             LazyVStack(spacing: Spacing.xs) {
@@ -47,6 +50,10 @@ struct AuditLogView: View {
                             .padding(.horizontal, metrics.horizontalPadding)
                             .padding(.bottom, Spacing.m)
                         }
+                        // Обновление — на самом списке. На экране целиком его
+                        // подхватывала и полоса фильтров: она тянулась вниз
+                        // пальцем и пробовала перезагрузить журнал.
+                        .refreshable { await load() }
                     }
                 }
             }
@@ -54,7 +61,6 @@ struct AuditLogView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Закрыть") { dismiss() } } }
             .task { await load() }
-            .refreshable { await load() }
             .onChange(of: filter) { Task { await load() } }
         }
     }

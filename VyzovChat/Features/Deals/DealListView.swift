@@ -45,9 +45,14 @@ struct DealListView: View {
                 if isLoading {
                     LoadingList()
                 } else if visibleDeals.isEmpty {
-                    EmptyState(icon: "briefcase",
-                               title: "Нет заказов",
-                               message: "Здесь появятся сделки из Битрикса, на которые вы назначены.")
+                    ScrollView {
+                        EmptyState(icon: "briefcase",
+                                   title: "Нет заказов",
+                                   message: "Здесь появятся сделки из Битрикса, на которые вы назначены.")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 120)
+                    }
+                    .refreshable { await load() }
                 } else {
                     VStack(spacing: Spacing.s) {
                         // Разделение по компаниям — как только компании вообще есть.
@@ -72,7 +77,6 @@ struct DealListView: View {
                     .environmentObject(session)
             }
             .task { await load() }
-            .refreshable { await load() }
             .onReceive(RealtimeService.shared.eventsChanged) { _ in Task { await load() } }
         }
     }
@@ -138,12 +142,13 @@ struct DealListView: View {
         let archived = archivedDeals(list)
 
         if list.isEmpty {
-            VStack {
-                Spacer()
+            ScrollView {
                 EmptyState(icon: "briefcase", title: "Нет заказов",
                            message: "У компании \(seg) пока нет мероприятий.")
-                Spacer()
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 120)
             }
+            .refreshable { await load() }
         } else {
             ScrollView {
                 LazyVStack(spacing: Spacing.s) {
@@ -175,6 +180,10 @@ struct DealListView: View {
                 .padding(.top, Spacing.xs)
                 .padding(.bottom, Spacing.xl)
             }
+            // Обновление — на самом списке. На экране целиком его подхватывала
+            // и полоса компаний: она тянулась вниз пальцем и пробовала
+            // перезагрузить заказы.
+            .refreshable { await load() }
         }
     }
 
