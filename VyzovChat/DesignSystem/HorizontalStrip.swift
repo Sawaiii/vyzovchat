@@ -9,9 +9,15 @@ extension View {
     /// внутри своей полосы. `fixedSize` прибивает высоту к содержимому, а
     /// `basedOnSize` убирает отскок по обеим осям, когда прокручивать нечего.
     ///
+    /// Главное же — `refresh`. `.refreshable` вешают на весь экран, а забирает
+    /// его КАЖДЫЙ `ScrollView` внутри: полоса чипов вместе со списком получала
+    /// «потяни-обнови» и оттого тянулась вниз пальцем, пробуя перезагрузить
+    /// экран. Полосе обновление не нужно — убираем его из её окружения.
+    ///
     /// Вешается на сам `ScrollView`, а не на его содержимое.
     func horizontalStrip() -> some View {
         self
+            .environment(\.refresh, nil)
             .scrollBounceBehavior(.basedOnSize, axes: [.horizontal, .vertical])
             .fixedSize(horizontal: false, vertical: true)
     }
