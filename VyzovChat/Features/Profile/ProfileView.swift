@@ -55,6 +55,7 @@ struct ProfileView: View {
             .navigationTitle("Профиль")
             // Крупный заголовок здесь дублировал имя под аватаром.
             .navigationBarTitleDisplayMode(.inline)
+            .appNavigationBar()
             // Внутри стека: полоса уезжает вместе с экраном при переходе.
             .appTabBar()
         }
