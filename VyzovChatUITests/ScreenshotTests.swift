@@ -75,6 +75,10 @@ final class ScreenshotTests: XCTestCase {
         // Отчёты — вкладка только у руководителя; у рядового сотрудника её нет.
         if tapTab("Отчёты") {
             snap("dashboard")
+            // Календарь показывает лишь плотность дней — содержательнее список
+            // отчётов по компаниям и сводка отработанных смен.
+            if tapButton("Все отчёты") { snap("dashboard-reports") }
+            if tapButton("Смены") { snap("dashboard-shifts") }
         }
 
         // Диск.
