@@ -1,0 +1,62 @@
+# Публикация в App Store (Custom App через Apple Business Manager)
+
+Выбран путь **Custom App**: приложение раздаётся сотрудникам через Apple Business
+Manager, а не лежит в открытом каталоге. Ревью то же самое, но мягче, и не нужны
+публичное описание и продающие скриншоты.
+
+## Что уже сделано в приложении
+
+- `VyzovChat/Resources/PrivacyInfo.xcprivacy` — манифест приватности
+  (обязателен с мая 2024; без него загрузка отбивается письмом ITMS-91053).
+  Объявлены `UserDefaults` (CA92.1) и `CACurrentMediaTime` в `VoiceRecorder` (35F9.1).
+  **Добавили новую зависимость или системный API — проверьте манифест.**
+- `ITSAppUsesNonExemptEncryption = false` в `Info.plist` — своего шифрования нет.
+- Экран «Правила и данные» (`Features/Profile/LegalView.swift`) — Guideline 1.2.
+  Открывается со входа, с регистрации и из профиля.
+- Блокировка человека (`Services/BlockStore.swift`) — Guideline 1.2. Прячет
+  сообщения, вложения, личную переписку и уведомления. Снять — профиль,
+  «Заблокированные».
+- Экран удаления аккаунта — Guideline 5.1.1(v). **Ждёт `DELETE /api/me`.**
+- `.github/workflows/release.yml` — подписанная сборка и загрузка. Mac не нужен.
+
+## Что нужно завести один раз
+
+1. **Apple Developer Program**, $99/год. Для ООО нужен D‑U‑N‑S — получение
+   1–2 недели, это самый долгий шаг, начинать с него.
+2. **Apple Business Manager** — бесплатно, регистрация на business.apple.com.
+   В нём же потом раздаётся приложение.
+3. **App Store Connect**: создать запись приложения, bundle id `ru.vyzovchat.app`,
+   в разделе Pricing and Availability включить **Custom App** и указать
+   организацию-получателя (её Organization ID из ABM).
+4. **Ключ App Store Connect API** (Users and Access → Integrations → App Store
+   Connect API, роль App Manager). Скачанный `.p8` даётся один раз.
+5. Секреты в GitHub (Settings → Secrets and variables → Actions):
+   `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (содержимое `.p8` целиком),
+   `APPLE_TEAM_ID`.
+
+## Как выпускать сборку
+
+Actions → **Release to App Store Connect** → Run workflow → номер сборки.
+Номер должен расти с каждой загрузкой; версию (`MARKETING_VERSION`) меняем
+в `project.yml`.
+
+Дальше в App Store Connect: сборка появляется через 10–30 минут, сначала уходит
+в TestFlight (внутреннее тестирование — без ревью), потом отправляется на ревью.
+
+## Что заполнить в карточке
+
+- Иконка 1024×1024 — берётся из ассетов автоматически.
+- Скриншоты 6.9″ (1320×2868) — минимум 3. Для Custom App достаточно рабочих
+  экранов без оформления.
+- Категория: Business. Возрастной рейтинг — по анкете, с учётом того, что в
+  приложении есть пользовательский контент.
+- **Privacy Policy URL** — обязателен всегда. Страница на vyzovchat.ru, текст
+  можно взять с экрана «Правила и данные».
+- **Privacy Nutrition Labels** — заполняются один в один с `PrivacyInfo.xcprivacy`.
+- **App Review Information**: рабочий демо-логин с паролем и код приглашения,
+  который не протухнет. Без них — автоматический отказ: всё приложение за входом.
+
+## Открытые пункты на бэкенде
+
+См. список в задаче для разработчика сервера: `DELETE /api/me`, публичная
+страница политики конфиденциальности, читаемый ящик поддержки, APNs.
