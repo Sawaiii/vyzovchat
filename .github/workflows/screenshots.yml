@@ -1,0 +1,174 @@
+name: Screenshots
+
+# Снимает экраны приложения в симуляторе iPhone и кладёт кадры в docs/screenshots.
+# Нужен для презентации: на Windows симулятора нет, а на раннере macOS есть.
+#
+# Учётная запись, под которой тест заходит на боевой сервер, берётся из секретов
+# репозитория DEMO_LOGIN и DEMO_PASSWORD (Settings → Secrets and variables → Actions).
+# В логи они не попадают: GitHub маскирует их звёздочками.
+#
+# Запускается пушем в ветку screenshots и вручную — вкладка Actions →
+# Screenshots → Run workflow (кнопка появляется, когда файл доехал до main).
+
+on:
+  push:
+    branches: [ screenshots ]
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Модель симулятора
+        default: iPhone 16 Pro
+        required: false
+      commit:
+        description: Положить кадры в репозиторий (docs/screenshots)
+        type: boolean
+        default: true
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # чтобы шаг ниже мог закоммитить снятые кадры
+
+jobs:
+  shots:
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Boot simulator
+        id: sim
+        run: |
+          set -eo pipefail
+          WANTED="${{ inputs.device || 'iPhone 16 Pro' }}"
+
+          # Берём запрошенную модель, а если её в раннере нет — любой iPhone,
+          # чтобы прогон не падал из-за смены состава образов на macOS-раннере.
+          TYPE=$(xcrun simctl list devicetypes -j \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devicetypes']; w='$WANTED'; \
+                m=[x for x in d if x['name']==w] or [x for x in d if 'iPhone' in x['name']]; \
+                print(m[-1]['identifier'])")
+          RUNTIME=$(xcrun simctl list runtimes -j \
+            | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] \
+                if x['isAvailable'] and 'iOS' in x['name']]; print(r[-1]['identifier'])")
+          echo "Устройство: $TYPE, система: $RUNTIME"
+
+          UDID=$(xcrun simctl create "Shots" "$TYPE" "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+          # Строка состояния как на снимках Apple: 9:41, полная батарея и связь.
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" \
+            --dataNetwork wifi --wifiMode active --wifiBars 3 \
+            --cellularMode active --cellularBars 4 \
+            --batteryState charged --batteryLevel 100
+
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Run screenshot test
+        env:
+          TEST_RUNNER_DEMO_LOGIN: ${{ secrets.DEMO_LOGIN }}
+          TEST_RUNNER_DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+        run: |
+          set -eo pipefail
+          if [ -z "$TEST_RUNNER_DEMO_LOGIN" ]; then
+            echo "::error::Не задан секрет DEMO_LOGIN — тесту нечем войти в приложение"
+            exit 1
+          fi
+          rm -rf Screenshots.xcresult
+          xcodebuild test \
+            -project VyzovChat.xcodeproj \
+            -scheme Screenshots \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath Screenshots.xcresult \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Extract screenshots
+        if: always()
+        run: |
+          set -eo pipefail
+          rm -rf docs/screenshots && mkdir -p docs/screenshots
+
+          # Кадры лежат внутри отчёта о прогоне как вложения. Выгружаем их и
+          # раскладываем под теми именами, которые тест дал каждому снимку, —
+          # сам xcresulttool кладёт файлы под служебными идентификаторами.
+          xcrun xcresulttool export attachments \
+            --path Screenshots.xcresult \
+            --output-path raw-shots
+
+          python3 - <<'PY'
+          import json, pathlib, shutil
+
+          raw = pathlib.Path("raw-shots")
+          out = pathlib.Path("docs/screenshots")
+          manifest = raw / "manifest.json"
+          if not manifest.exists():
+              raise SystemExit("Отчёт без вложений: тест не снял ни одного кадра")
+
+          saved = 0
+          for test in json.loads(manifest.read_text()):
+              for att in test.get("attachments", []):
+                  src = raw / att["exportedFileName"]
+                  name = att.get("suggestedHumanReadableName") or src.stem
+                  if not src.exists():
+                      continue
+                  dst = out / (name if name.endswith(".png") else name + ".png")
+                  shutil.copyfile(src, dst)
+                  saved += 1
+                  print("сохранено:", dst.name)
+
+          if not saved:
+              raise SystemExit("Во вложениях нет ни одного кадра")
+          print(f"всего кадров: {saved}")
+          PY
+
+          ls -lh docs/screenshots
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VyzovChat-screenshots
+          path: docs/screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit screenshots
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.commit) }}
+        run: |
+          set -eo pipefail
+          if [ -z "$(ls -A docs/screenshots 2>/dev/null)" ]; then
+            echo "Кадров нет — коммитить нечего"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/screenshots
+          git diff --cached --quiet && echo "Кадры не изменились" && exit 0
+          git commit -m "Скриншоты приложения из симулятора"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Keep result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Screenshots-xcresult
+          path: Screenshots.xcresult
+          retention-days: 5

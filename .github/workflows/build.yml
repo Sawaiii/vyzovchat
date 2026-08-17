@@ -9,7 +9,8 @@ name: Build unsigned IPA
 
 on:
   push:
-    branches: [ '**' ]
+    # Ветку со скриншотами собирает свой workflow — второй раз компилировать незачем.
+    branches: [ '**', '!screenshots' ]
   workflow_dispatch:
 
 concurrency:
