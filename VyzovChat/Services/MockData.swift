@@ -4,8 +4,8 @@ import Foundation
 ///
 /// Включаются запуском с аргументом `-demoData` (см. `AppConfig.useMockData`).
 /// На них снимают экраны для презентации: рабочие переписки и заказы показывать
-/// нельзя, а пустые экраны ничего не рассказывают. Люди, компании и мероприятия
-/// здесь придуманы; совпадения с настоящими случайны.
+/// нельзя, а пустые экраны ничего не рассказывают. Компании настоящие — АРТ, А+,
+/// ПРО и остальные из справочника организации; люди и мероприятия придуманы.
 enum MockData {
 
     // MARK: - Люди
@@ -71,7 +71,7 @@ enum MockData {
              eventDate: date(daysAgo: 0),
              assignedUserIds: ["1024", "1050", "1090", "1118"],
              responsibleId: "1050",
-             company: "Атлант Групп",
+             company: "АРТ",
              myRole: "senior"),
         Deal(id: "4098",
              title: "Свадьба Королёвых — Loft Hall",
@@ -80,7 +80,7 @@ enum MockData {
              eventDate: date(daysAgo: 1),
              assignedUserIds: ["1024", "1077", "1103"],
              responsibleId: "1050",
-             company: "Гранд Холл",
+             company: "А+",
              myRole: "admin"),
         Deal(id: "4091",
              title: "Корпоратив «ТехноПром» — Резиденция",
@@ -89,7 +89,7 @@ enum MockData {
              eventDate: date(daysAgo: 2),
              assignedUserIds: ["1024", "1050", "1077"],
              responsibleId: "1050",
-             company: "Атлант Групп",
+             company: "АРТ",
              myRole: "member"),
         Deal(id: "4085",
              title: "Юбилей 50 лет — ресторан «Волга»",
@@ -100,7 +100,7 @@ enum MockData {
              responsibleId: "1050",
              rawStatus: "closed",
              reportStatus: "sent",
-             company: "Гранд Холл",
+             company: "А+",
              myRole: "member"),
         Deal(id: "4077",
              title: "Выставка «АгроЭкспо» — павильон 3",
@@ -112,7 +112,7 @@ enum MockData {
              archived: true,
              rawStatus: "closed",
              reportStatus: "sent",
-             company: "Атлант Групп",
+             company: "АРТ",
              myRole: "member"),
         Deal(id: "4110",
              title: "Форум «Медиа Старт» — Digital October",
@@ -121,7 +121,7 @@ enum MockData {
              eventDate: date(daysAgo: -3),
              assignedUserIds: ["1024", "1050", "1103"],
              responsibleId: "1050",
-             company: "Медиа Старт",
+             company: "ПРО",
              myRole: "senior")
     ]
 
