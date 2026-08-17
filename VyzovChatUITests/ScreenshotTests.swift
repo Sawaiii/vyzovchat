@@ -21,6 +21,10 @@ final class ScreenshotTests: XCTestCase {
     /// Порядковый номер кадра: имя файла задаёт порядок в презентации.
     private var shotIndex = 0
 
+    /// Снимаем ли вымышленные данные вместо рабочих — попадает в отчёт,
+    /// чтобы это было видно, не разглядывая кадры.
+    private var usingDemoData = false
+
     override func setUpWithError() throws {
         continueAfterFailure = true
         app = XCUIApplication()
@@ -80,6 +84,10 @@ final class ScreenshotTests: XCTestCase {
         // Профиль.
         tapTab("Профиль")
         snap("profile")
+
+        print(usingDemoData
+              ? "ИТОГ: кадры сняты на вымышленных данных"
+              : "ИТОГ: кадры сняты на рабочем сервере")
     }
 
     // MARK: - Вход
@@ -105,14 +113,13 @@ final class ScreenshotTests: XCTestCase {
         }
 
         type(user, into: login)
-
-        let password = app.secureTextFields["Пароль"]
-        if password.waitForExistence(timeout: 5) {
-            type(pass, into: password)
-        }
+        typePassword(pass)
 
         let submit = app.buttons["Войти"].firstMatch
-        XCTAssertTrue(submit.isEnabled, "Кнопка входа осталась выключенной — поля заполнились не полностью")
+        guard submit.isEnabled else {
+            restartWithDemoData(reason: "поле пароля не приняло ввод")
+            return
+        }
         submit.tap()
 
         // Вошли — это видно по полосе вкладок. Если её нет, дальше снимать нечего:
@@ -122,23 +129,60 @@ final class ScreenshotTests: XCTestCase {
             let banner = app.staticTexts.allElementsBoundByIndex
                 .map(\.label)
                 .first { $0.contains("парол") || $0.contains("сотрудник") || $0.contains("связи") }
-            XCTFail("Вход не прошёл: список чатов не появился. Экран сообщает: \(banner ?? "ничего")")
+            restartWithDemoData(reason: "сервер не пустил, экран сообщает: \(banner ?? "ничего")")
             return
         }
     }
 
-    /// Заполняет поле. Защищённое поле в симуляторе нередко не принимает первый
-    /// ввод сразу после наведения фокуса — тогда набираем ещё раз, уже в то поле,
-    /// которое система считает активным.
+    /// Заполняет поле.
     private func type(_ text: String, into field: XCUIElement) {
         field.tap()
         _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
         field.typeText(text)
+    }
 
-        let filled = (field.value as? String).map { $0 != field.placeholderValue } ?? false
-        if !filled {
-            app.typeText(text)
+    /// Пароль набираем в открытом виде.
+    ///
+    /// Защищённое поле в симуляторе ввод нередко теряет: фокус ставится, а текст
+    /// не доходит. У поля есть кнопка показа пароля — нажимаем её, набираем в
+    /// обычное поле и прячем обратно. Кадр экрана входа снят раньше, так что
+    /// пароль в открытом виде никуда не попадает.
+    private func typePassword(_ pass: String) {
+        let eye = app.buttons["eye"].firstMatch
+        if eye.waitForExistence(timeout: 5), eye.isHittable {
+            eye.tap()
+            let open = app.textFields["Пароль"]
+            if open.waitForExistence(timeout: 5) {
+                type(pass, into: open)
+                let hide = app.buttons["eye.slash"].firstMatch
+                if hide.exists, hide.isHittable { hide.tap() }
+                return
+            }
         }
+
+        // Запасной путь — как обычно, в защищённое поле.
+        let secure = app.secureTextFields["Пароль"]
+        if secure.waitForExistence(timeout: 5) {
+            type(pass, into: secure)
+        }
+    }
+
+    /// Запускает приложение заново на вымышленных данных.
+    ///
+    /// Нужен, когда попасть на рабочий сервер не удалось: презентации нужны
+    /// заполненные экраны, а не пустой список. Данные вымышленные — рабочие
+    /// переписки в презентацию и не попадут.
+    private func restartWithDemoData(reason: String) {
+        usingDemoData = true
+        // Кадры, снятые до сюда, относятся к рабочей сборке — нумерацию
+        // продолжаем, чтобы порядок в презентации не сбился.
+        app.terminate()
+        app.launchArguments.append("-demoData")
+        app.launch()
+        dismissSystemAlerts(waiting: 10)
+
+        XCTAssertTrue(named("Чаты").waitForExistence(timeout: 60),
+                      "Не открылся список чатов даже на вымышленных данных (\(reason))")
     }
 
     /// Значение секрета. `xcodebuild` отдаёт его без префикса, но на всякий

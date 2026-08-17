@@ -51,7 +51,8 @@ final class MockAuthService: AuthServicing {
 
     func restoreSession() async -> User? {
         try? await Task.sleep(for: .milliseconds(600)) // имитация проверки токена
-        guard UserDefaults.standard.string(forKey: sessionKey) != nil else { return nil }
+        // В демо-режиме показываем приложение сразу вошедшим: он и включается
+        // затем, чтобы посмотреть экраны, а не проходить вход.
         return MockData.currentUser
     }
 
