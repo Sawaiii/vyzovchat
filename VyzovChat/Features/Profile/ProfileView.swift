@@ -15,6 +15,9 @@ struct ProfileView: View {
     @State private var showWorkers = false
     @State private var showAudit = false
     @State private var showComplaints = false
+    @State private var showLegal = false
+    @State private var showBlocked = false
+    @State private var showDeleteAccount = false
     /// Сколько жалоб ждут разбора — счётчик в строке.
     @State private var newComplaints = 0
 
@@ -45,7 +48,9 @@ struct ProfileView: View {
                         if session.currentUser?.isAdmin == true { adminCard }
                         yandexCard
                         settingsCard
+                        legalCard
                         signOutButton
+                        deleteAccountButton
                     }
                     .padding(.horizontal, metrics.horizontalPadding)
                     .padding(.top, metrics.contentTopPadding)
@@ -269,6 +274,33 @@ struct ProfileView: View {
                 Divider().opacity(0.3)
                 toggleRow("Загрузка фото по Wi-Fi", "wifi")
             }
+        }
+    }
+
+    /// Правила, обработка данных и список заблокированных.
+    ///
+    /// Всё это App Store требует держать внутри приложения, а не только на
+    /// сайте: правила с запретом оскорбительного контента, способ пожаловаться
+    /// и способ снять блокировку.
+    private var legalCard: some View {
+        VStack(spacing: Spacing.s) {
+            adminRow(title: "Правила и данные", icon: "doc.text") { showLegal = true }
+            adminRow(title: "Заблокированные", icon: "hand.raised.slash") { showBlocked = true }
+        }
+        .sheet(isPresented: $showLegal) { LegalView() }
+        .sheet(isPresented: $showBlocked) { BlockedUsersView() }
+    }
+
+    /// Удаление аккаунта — отдельной строкой под выходом, а не в общем списке:
+    /// перепутать «Выйти» и «Удалить» не должно быть возможности.
+    private var deleteAccountButton: some View {
+        Button { showDeleteAccount = true } label: {
+            Text("Удалить аккаунт")
+                .font(Typography.caption)
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .sheet(isPresented: $showDeleteAccount) {
+            DeleteAccountView().environmentObject(session)
         }
     }
 

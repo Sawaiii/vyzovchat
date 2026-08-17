@@ -115,16 +115,23 @@ final class ChatViewModel: ObservableObject {
     /// Лента чата. Поиск её больше не подменяет: найденное живёт в своём окне,
     /// а чат под ним остаётся чатом — иначе переход к сообщению начинался с
     /// того, что лента сначала превращалась в список ссылок и обратно.
-    var visibleMessages: [Message] { messages }
+    ///
+    /// Заблокированные отсюда вырезаны: блокировка должна прятать и текст, и
+    /// фото, иначе она половинчатая. Фильтруем на входе в ленту, а не в самой
+    /// ленте, — тогда и галерея, и вложения чиста́тся тем же одним правилом.
+    var visibleMessages: [Message] {
+        guard !BlockStore.blocked.isEmpty else { return messages }
+        return messages.filter { !BlockStore.isBlocked($0.senderId) }
+    }
 
     /// Все фото/видео чата — для листания в полноэкранном просмотре.
     var mediaAttachments: [Message.Attachment] {
-        messages.flatMap { $0.attachments.filter { $0.isImage || $0.isVideo } }
+        visibleMessages.flatMap { $0.attachments.filter { $0.isImage || $0.isVideo } }
     }
 
     /// Все вложения чата (фото/видео/файлы) — для раздела «Вложения» в профиле.
     var allAttachments: [Message.Attachment] {
-        messages.flatMap { $0.attachments }
+        visibleMessages.flatMap { $0.attachments }
     }
 
     let chat: Chat
@@ -155,6 +162,12 @@ final class ChatViewModel: ObservableObject {
         self.service = service
         self.currentUserId = currentUserId
         subscribeToRealtime()
+        // Блокировку ставят из состава участников — то есть с другого экрана.
+        // Лента про это иначе не узнает и покажет скрытое до перезахода.
+        NotificationCenter.default.publisher(for: .blockListChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in Task { @MainActor in self?.rebuildActiveFeed() } }
+            .store(in: &cancellables)
         // Предел длины записи ловит строка ввода: ей нужно ещё и вернуть себе
         // обычный вид, а модель про её состояние ничего не знает.
     }

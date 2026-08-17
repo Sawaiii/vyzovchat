@@ -5,6 +5,7 @@ struct RegisterView: View {
     @EnvironmentObject private var session: AppSession
     @Environment(\.adaptiveMetrics) private var metrics
     @StateObject private var vm = AuthViewModel(auth: MockAuthService(), onSuccess: { _ in })
+    @State private var showLegal = false
 
     var body: some View {
         ZStack {
@@ -39,6 +40,18 @@ struct RegisterView: View {
                     Text("Код приглашения выдаёт администратор. Такой аккаунт открывает Диск и Фотобанк; чаты появятся, когда вас добавят в мероприятие.")
                         .font(Typography.caption)
                         .foregroundStyle(Theme.textSecondary)
+
+                    // Согласие с правилами — до создания аккаунта, а не после.
+                    VStack(spacing: 2) {
+                        Text("Создавая аккаунт, вы принимаете правила использования")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                        Button("Правила и обработка данных") { showLegal = true }
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.top, Spacing.l)
@@ -48,6 +61,7 @@ struct RegisterView: View {
         }
         .navigationTitle("Регистрация")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showLegal) { LegalView() }
         .onAppear {
             vm.rebindIfNeeded(auth: session.auth) { user in
                 session.handleSignedIn(user)

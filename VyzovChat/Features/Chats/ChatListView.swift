@@ -20,7 +20,9 @@ struct ChatListView: View {
     private func chats(for seg: Segment) -> [Chat] {
         switch seg {
         case .events: return vm.activeEventChats
-        case .dms: return vm.dmChats
+        // Переписка с заблокированным не должна висеть в списке: внутри неё всё
+        // равно ничего не видно.
+        case .dms: return vm.dmChats.filter { !BlockStore.isBlocked($0.directPeerId ?? "") }
         case .archive: return vm.archivedEventChats
         }
     }

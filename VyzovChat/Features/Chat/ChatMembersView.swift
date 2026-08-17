@@ -20,6 +20,9 @@ struct ChatMembersView: View {
     @State private var showAdd = false
     /// На кого пишем жалобу.
     @State private var complainAbout: User?
+    /// Локальная копия списка блокировок: `BlockStore` — не наблюдаемый объект,
+    /// а меню должно сразу переименовываться после нажатия.
+    @State private var blocked: Set<String> = BlockStore.blocked
 
     var body: some View {
         NavigationStack {
@@ -52,6 +55,23 @@ struct ChatMembersView: View {
                                                 complainAbout = user
                                             } label: {
                                                 Label("Пожаловаться", systemImage: "exclamationmark.bubble")
+                                            }
+                                            // Жалобу разбирают люди и не сразу.
+                                            // Блокировка — то же решение, но моё
+                                            // и мгновенное: сообщения и фото
+                                            // этого человека просто исчезают.
+                                            if blocked.contains(user.id) {
+                                                Button {
+                                                    toggleBlock(user)
+                                                } label: {
+                                                    Label("Разблокировать", systemImage: "person.crop.circle.badge.checkmark")
+                                                }
+                                            } else {
+                                                Button(role: .destructive) {
+                                                    toggleBlock(user)
+                                                } label: {
+                                                    Label("Заблокировать", systemImage: "hand.raised.slash")
+                                                }
                                             }
                                         }
                                         if canManage, user.id != session.currentUser?.id {
@@ -120,6 +140,13 @@ struct ChatMembersView: View {
             Haptics.success()
             await load()
         }
+    }
+
+    /// Скрыть/показать человека. Хранится на устройстве — сервер про это не знает.
+    private func toggleBlock(_ user: User) {
+        BlockStore.toggle(user.id, name: user.fullName, currentUserId: session.currentUser?.id ?? "")
+        blocked = BlockStore.blocked
+        Haptics.success()
     }
 
     private func row(_ user: User) -> some View {

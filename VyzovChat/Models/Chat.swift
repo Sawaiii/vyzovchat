@@ -43,6 +43,14 @@ struct Chat: Identifiable, Codable, Equatable, Hashable {
     var address: String? = nil
     var crmURL: URL? = nil
 
+    /// С кем эта личная переписка. Id зашит в идентификатор чата («dm-42»),
+    /// отдельного поля сервер не шлёт, а знать собеседника нужно — например,
+    /// чтобы не показывать переписку с заблокированным.
+    var directPeerId: String? {
+        guard id.hasPrefix("dm-") else { return nil }
+        return String(id.dropFirst("dm-".count))
+    }
+
     /// Плашка своей роли в списке чатов: «участника» не рисуем — это шум.
     var myRoleChip: EventRole? {
         guard !isDirect, let raw = myRole, !raw.isEmpty else { return nil }

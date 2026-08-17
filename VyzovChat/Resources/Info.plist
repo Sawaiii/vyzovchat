@@ -50,6 +50,11 @@
 	<string>Vyzov Chat добавляет геометку к фото с мероприятия — это нужно для юридического подтверждения места съёмки.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Automatic</string>
+	<!-- Своего шифрования нет: только стандартный HTTPS, а он подпадает под
+	     исключение. Ключ выставлен заранее, чтобы App Store Connect не задавал
+	     вопрос про экспортное соответствие при каждой загрузке сборки. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- Ссылка-приглашение: vyzovchat://join/<token>. Универсальные https-ссылки
 	     требуют apple-app-site-association на сервере, а сервер не наш. -->
 	<key>CFBundleURLTypes</key>

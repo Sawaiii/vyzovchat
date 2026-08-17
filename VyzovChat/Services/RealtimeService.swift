@@ -564,6 +564,10 @@ final class RealtimeService: ObservableObject {
     private func notifyIfNeeded(_ msg: Message, mentioned: Bool) {
         guard msg.senderId != currentUserId else { return }   // не своё
         guard msg.chatId != activeChatId else { return }       // не открытый сейчас чат
+        // Заблокированный не должен доставать даже уведомлением: иначе
+        // блокировка прячет сообщение в ленте, но озвучивает его на экране
+        // блокировки — это хуже, чем не блокировать вовсе.
+        guard !BlockStore.isBlocked(msg.senderId) else { return }
         // Отметки о смене и прочие служебные строки — фон мероприятия, а не
         // разговор: сервер по ним пуш не шлёт, и локально дёргать не за чем.
         // Важное объявление — исключение: под ним ждут отметку «Ознакомлен»,

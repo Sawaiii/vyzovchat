@@ -76,6 +76,9 @@ final class ChatListViewModel: ObservableObject {
 
     /// Пришло новое сообщение — сразу двигаем превью и счётчик нужного чата.
     func applyIncoming(_ message: Message) {
+        // От заблокированного не растим счётчик и не меняем превью: строка чата
+        // иначе показывала бы текст, который в самой ленте скрыт.
+        guard !BlockStore.isBlocked(message.senderId) else { return }
         let isMine = message.senderId == RealtimeService.shared.currentUserId
         let isOpen = RealtimeService.shared.activeChatId == message.chatId
 

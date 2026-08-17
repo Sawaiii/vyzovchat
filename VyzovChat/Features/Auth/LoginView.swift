@@ -6,6 +6,7 @@ struct LoginView: View {
     @StateObject private var vm: AuthViewModel
     @State private var showPasswordReset = false
     @State private var showYandex = false
+    @State private var showLegal = false
     @State private var providers: AuthProvidersDTO?
 
     init() {
@@ -52,6 +53,11 @@ struct LoginView: View {
                         .font(Typography.caption)
                         .foregroundStyle(Theme.accent)
                         .frame(maxWidth: .infinity, alignment: .center)
+
+                    // Согласие с правилами показываем на входе, а не прячем в
+                    // профиль: App Store требует, чтобы про запрет оскорбительного
+                    // контента человек прочитал до того, как что-то напишет.
+                    legalNote
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.top, Spacing.l)
@@ -68,6 +74,21 @@ struct LoginView: View {
         .sheet(isPresented: $showYandex) {
             YandexLoginView { token in Task { await finishYandex(token) } }
         }
+    }
+
+    /// «Продолжая, вы принимаете…» — с открытием самих правил, а не ссылкой на сайт.
+    private var legalNote: some View {
+        VStack(spacing: 2) {
+            Text("Продолжая, вы принимаете правила использования")
+                .font(.caption2)
+                .foregroundStyle(Theme.textSecondary)
+            Button("Правила и обработка данных") { showLegal = true }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Spacing.s)
+        .sheet(isPresented: $showLegal) { LegalView() }
     }
 
     private var header: some View {

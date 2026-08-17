@@ -1,0 +1,141 @@
+name: Release to App Store Connect
+
+# Подписанная сборка и загрузка в App Store Connect (оттуда — в TestFlight и
+# в Custom App для Apple Business Manager).
+#
+# Mac для этого не нужен: сертификат и профиль Xcode создаёт сам на раннере,
+# если дать ему ключ App Store Connect API. Ручного «скачай сертификат,
+# сделай CSR» здесь нет вообще.
+#
+# Запуск только вручную: каждая загрузка занимает номер сборки, и делать это
+# на каждый пуш незачем.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Номер сборки (CFBundleVersion). Должен расти с каждой загрузкой"
+        required: true
+        default: "1"
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    env:
+      # Заполняются в Settings → Secrets and variables → Actions:
+      #   ASC_KEY_ID      — идентификатор ключа App Store Connect API (10 знаков)
+      #   ASC_ISSUER_ID   — Issuer ID оттуда же (UUID)
+      #   ASC_KEY_P8      — содержимое файла AuthKey_XXXX.p8 целиком
+      #   APPLE_TEAM_ID   — Team ID из Apple Developer (10 знаков)
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Проверить, что секреты заданы
+        run: |
+          set -eo pipefail
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Не задан секрет $name"
+              exit 1
+            fi
+          done
+          if [ -z "${{ secrets.ASC_KEY_P8 }}" ]; then
+            echo "::error::Не задан секрет ASC_KEY_P8"
+            exit 1
+          fi
+
+      - name: Положить ключ App Store Connect
+        run: |
+          set -eo pipefail
+          mkdir -p ~/private_keys
+          # Имя строго такое: по нему altool находит ключ сам.
+          printf '%s' "${{ secrets.ASC_KEY_P8 }}" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive
+        run: |
+          set -eo pipefail
+          xcodebuild archive \
+            -project VyzovChat.xcodeproj \
+            -scheme VyzovChat \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/VyzovChat.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="${{ inputs.build_number }}"
+
+      - name: Export .ipa
+        run: |
+          set -eo pipefail
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>destination</key>
+            <string>export</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build/VyzovChat.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls -lh build/export
+
+      - name: Проверить сборку перед загрузкой
+        run: |
+          set -eo pipefail
+          # Отдельный шаг: validate ловит почти всё, что потом отбивает загрузку
+          # (иконки, манифест приватности, номер сборки) — и делает это за минуту.
+          xcrun altool --validate-app \
+            -f build/export/VyzovChat.ipa \
+            -t ios \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Загрузить в App Store Connect
+        run: |
+          set -eo pipefail
+          xcrun altool --upload-app \
+            -f build/export/VyzovChat.ipa \
+            -t ios \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Сохранить .ipa в артефактах
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VyzovChat-signed-ipa
+          path: build/export/VyzovChat.ipa
+          if-no-files-found: warn
