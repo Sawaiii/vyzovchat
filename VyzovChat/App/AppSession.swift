@@ -90,7 +90,10 @@ final class AppSession: ObservableObject {
         RealtimeService.shared.currentUserId = user.id
         RealtimeService.shared.currentUserFio = user.fio.isEmpty ? user.fullName : user.fio
         RealtimeService.shared.connect(token: token)
-        LocationProvider.shared.requestAuthorization()   // геометки для фото (юр. инфа)
+        // Геолокацию тут больше не просим. Сразу после входа этот запрос ничем
+        // не объяснён: человек ещё ничего не снимал и на смену не вставал, —
+        // а App Store требует спрашивать разрешение там, где видно зачем.
+        // Спрашиваем при открытии выбора фото и при отметке смены.
         Task { await AvatarStore.loadIfNeeded() }        // фото профилей для ленты и списков
     }
 

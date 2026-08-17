@@ -356,6 +356,12 @@ struct ChatView: View {
                       allowsMultipleSelection: true) { result in
             handleFileImport(result)
         }
+        // Разрешение на геолокацию спрашиваем здесь: человек открыл выбор фото,
+        // и системный вопрос про геометку снимка на этом месте объясним. Пока он
+        // выбирает кадры, ответ успевает прийти — координата попадёт уже в первое фото.
+        .onChange(of: showPhotoPicker) {
+            if showPhotoPicker { LocationProvider.shared.requestAuthorization() }
+        }
         .onChange(of: pickerItems) { handlePickedMedia() }
         .sheet(isPresented: $showPhotoReport) {
             ReportView(model: model)

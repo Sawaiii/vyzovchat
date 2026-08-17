@@ -6,6 +6,7 @@ struct AuthFlowView: View {
     @Environment(\.adaptiveMetrics) private var metrics
     @State private var appear = false
     @State private var showInvite = false
+    @State private var providers: AuthProvidersDTO?
 
     var body: some View {
         NavigationStack {
@@ -45,15 +46,21 @@ struct AuthFlowView: View {
                                 .shadow(color: Theme.accent.opacity(0.45), radius: 16, y: 8)
                         }
 
-                        NavigationLink {
-                            RegisterView().environmentObject(session)
-                        } label: {
-                            Text("Регистрация")
-                                .font(Typography.button)
-                                .foregroundStyle(Theme.textPrimary)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 54)
-                                .glass(cornerRadius: 27, elevated: false)
+                        // Регистрация на сервере может быть выключена целиком (пустой
+                        // REG_INVITE_CODE) — тогда экран отвечал бы только ошибкой.
+                        // Спрашиваем заранее; пока ответа нет — кнопку показываем,
+                        // иначе она мигала бы при каждом запуске.
+                        if providers?.register != false {
+                            NavigationLink {
+                                RegisterView().environmentObject(session)
+                            } label: {
+                                Text("Регистрация")
+                                    .font(Typography.button)
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 54)
+                                    .glass(cornerRadius: 27, elevated: false)
+                            }
                         }
 
                         // Склад приходит по ссылке из CRM: пароля у него нет вовсе,
@@ -76,6 +83,9 @@ struct AuthFlowView: View {
         }
         .onAppear {
             withAnimation(.smooth(duration: 0.7)) { appear = true }
+        }
+        .task {
+            providers = try? await APIClient.shared.get("/api/auth/providers", as: AuthProvidersDTO.self)
         }
     }
 }
