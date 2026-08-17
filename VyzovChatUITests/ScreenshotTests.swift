@@ -228,6 +228,7 @@ final class ScreenshotTests: XCTestCase {
     /// у рядового сотрудника, например, нет «Отчётов».
     @discardableResult
     private func tapTab(_ title: String) -> Bool {
+        dismissSheetIfNeeded()
         let tab = named(title)
         guard tab.waitForExistence(timeout: 10) else { return false }
         // По надписи внутри кнопки система не даёт нажать напрямую — жмём в её точку.
@@ -248,11 +249,28 @@ final class ScreenshotTests: XCTestCase {
         for element in candidates {
             guard element.exists, element.isHittable else { continue }
             guard !tabTitles.contains(element.label) else { continue }
-            // Полоса вкладок лежит у нижнего края — строку списка ищем выше неё.
-            guard element.frame.midY < app.frame.height - 120 else { continue }
+            // Кнопки-значки (плюс, поиск, фильтр) подписи почти не имеют —
+            // строка списка всегда несёт название мероприятия.
+            guard element.label.count > 8 else { continue }
+            // Ниже панели сверху и выше полосы вкладок снизу.
+            guard element.frame.minY > 140,
+                  element.frame.midY < app.frame.height - 120 else { continue }
             element.tap()
             settle()
             return
+        }
+    }
+
+    /// Закрывает всплывший экран, если он открыт: иначе следующий кадр снимет
+    /// не тот экран, который нужен.
+    private func dismissSheetIfNeeded() {
+        for title in ["Отмена", "Закрыть", "Готово"] {
+            let button = app.navigationBars.buttons[title].firstMatch
+            if button.exists, button.isHittable {
+                button.tap()
+                settle()
+                return
+            }
         }
     }
 
