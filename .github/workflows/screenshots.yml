@@ -114,7 +114,7 @@ jobs:
             --output-path raw-shots
 
           python3 - <<'PY'
-          import json, pathlib, shutil
+          import json, pathlib, re, shutil
 
           raw = pathlib.Path("raw-shots")
           out = pathlib.Path("docs/screenshots")
@@ -129,7 +129,11 @@ jobs:
                   name = att.get("suggestedHumanReadableName") or src.stem
                   if not src.exists():
                       continue
-                  dst = out / (name if name.endswith(".png") else name + ".png")
+                  # К имени кадра прицеплены номер попытки и внутренний
+                  # идентификатор — в презентации они не нужны.
+                  name = re.sub(r"\.png$", "", name)
+                  name = re.sub(r"_\d+_[0-9A-Fa-f-]{36}$", "", name)
+                  dst = out / (name + ".png")
                   shutil.copyfile(src, dst)
                   saved += 1
                   print("сохранено:", dst.name)

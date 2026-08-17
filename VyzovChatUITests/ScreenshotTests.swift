@@ -42,6 +42,23 @@ final class ScreenshotTests: XCTestCase {
         snap("chats-list")
         openFirstRow()
         snap("chat-conversation")
+
+        // Смены мероприятия — кнопка в панели переписки.
+        if tapButton("Смены") {
+            snap("shifts")
+            closeSheet()
+        }
+
+        // Остальное спрятано в меню «…» справа в панели.
+        if openChatMenu(), tapButton("Медиа чата") {
+            snap("chat-media")
+            closeSheet()
+        }
+        if openChatMenu(), tapButton("Участники") {
+            snap("chat-members")
+            closeSheet()
+        }
+
         goBack()
 
         // Заказы.
@@ -68,9 +85,16 @@ final class ScreenshotTests: XCTestCase {
     // MARK: - Вход
 
     private func signIn() {
+        // Первым идёт приветственный экран, поля появляются только после «Войти».
+        let welcome = app.buttons["Войти"].firstMatch
+        if welcome.waitForExistence(timeout: 30), !app.textFields["Логин"].exists {
+            snap("welcome")
+            welcome.tap()
+        }
+
         let login = app.textFields["Логин"]
-        guard login.waitForExistence(timeout: 30) else {
-            // Уже вошли (сохранённая сессия) — снимать экран входа нечего.
+        guard login.waitForExistence(timeout: 20) else {
+            XCTFail("Экран входа не открылся — снимать дальше нечего")
             return
         }
         snap("login")
@@ -90,6 +114,12 @@ final class ScreenshotTests: XCTestCase {
         }
 
         app.buttons["Войти"].firstMatch.tap()
+
+        // Вошли — это видно по полосе вкладок. Если её нет, дальше снимать нечего:
+        // пусть прогон покраснеет здесь, а не отдаст десяток одинаковых кадров.
+        let chatsTab = app.buttons["Чаты"].firstMatch
+        XCTAssertTrue(chatsTab.waitForExistence(timeout: 60),
+                      "Вход не прошёл: список чатов не появился")
     }
 
     /// Значение секрета. `xcodebuild` отдаёт его без префикса, но на всякий
@@ -139,6 +169,39 @@ final class ScreenshotTests: XCTestCase {
             settle()
             return
         }
+    }
+
+    /// Нажимает кнопку по названию, если она на экране. Названия у кнопок панели
+    /// заданы через `accessibilityLabel` — искать по ним надёжнее, чем по значку.
+    @discardableResult
+    private func tapButton(_ title: String, timeout: TimeInterval = 8) -> Bool {
+        let button = app.buttons[title].firstMatch
+        guard button.waitForExistence(timeout: timeout), button.isHittable else { return false }
+        button.tap()
+        settle()
+        return true
+    }
+
+    /// Меню «…» в панели переписки. У кнопки нет подписи, поэтому берём её по значку.
+    private func openChatMenu() -> Bool {
+        let menu = app.navigationBars.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'ellipsis' OR label CONTAINS[c] 'Ещё'")
+        ).firstMatch
+        guard menu.waitForExistence(timeout: 8), menu.isHittable else { return false }
+        menu.tap()
+        settle()
+        return true
+    }
+
+    /// Закрывает всплывающий экран — везде в приложении это «Закрыть».
+    private func closeSheet() {
+        for title in ["Закрыть", "Готово", "Отмена"] where app.buttons[title].firstMatch.exists {
+            app.buttons[title].firstMatch.tap()
+            settle()
+            return
+        }
+        app.swipeDown()
+        settle()
     }
 
     private func goBack() {
