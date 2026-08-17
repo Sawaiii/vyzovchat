@@ -72,14 +72,19 @@ final class MockDashboardService: DashboardServicing {
     func dashboard() async -> [DashCompanyDTO]? {
         try? await Task.sleep(for: .milliseconds(400))
         return [
-            DashCompanyDTO(name: "Атлант Групп", events: [
-                event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false),
-                event(4091, "Корпоратив «ТехноПром» — Резиденция", viewed: true),
-                event(4077, "Выставка «АгроЭкспо» — павильон 3", viewed: true)
+            DashCompanyDTO(name: "АРТ", events: [
+                event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false,
+                      photos: 24, docs: 2, onShift: 3),
+                event(4091, "Корпоратив «ТехноПром» — Резиденция", viewed: true,
+                      photos: 61, docs: 3, onShift: 0),
+                event(4077, "Выставка «АгроЭкспо» — павильон 3", viewed: true,
+                      photos: 38, docs: 1, onShift: 0)
             ]),
-            DashCompanyDTO(name: "Гранд Холл", events: [
-                event(4098, "Свадьба Королёвых — Loft Hall", viewed: false),
-                event(4085, "Юбилей 50 лет — ресторан «Волга»", viewed: true)
+            DashCompanyDTO(name: "А+", events: [
+                event(4098, "Свадьба Королёвых — Loft Hall", viewed: false,
+                      photos: 148, docs: 2, onShift: 1),
+                event(4085, "Юбилей 50 лет — ресторан «Волга»", viewed: true,
+                      photos: 74, docs: 4, onShift: 0)
             ])
         ]
     }
@@ -95,7 +100,8 @@ final class MockDashboardService: DashboardServicing {
     }
 
     func day(_ date: String) async -> [DashEventDTO]? {
-        [event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false)]
+        [event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false,
+                     photos: 24, docs: 2, onShift: 3)]
     }
 
     func markViewed(dealId: String) async {}
@@ -104,15 +110,15 @@ final class MockDashboardService: DashboardServicing {
         try? await Task.sleep(for: .milliseconds(300))
         return [
             shift(1024, "Никитин Алексей Сергеевич", 4102, "Конференция «Логистика 2026»",
-                  "Атлант Групп", "senior", "2026-08-17T07:28:00Z", nil),
+                  "АРТ", "senior", "2026-08-17T07:28:00Z", nil),
             shift(1090, "Ковалёв Игорь Павлович", 4102, "Конференция «Логистика 2026»",
-                  "Атлант Групп", "member", "2026-08-17T06:55:00Z", "2026-08-17T15:10:00Z"),
+                  "АРТ", "member", "2026-08-17T06:55:00Z", "2026-08-17T15:10:00Z"),
             shift(1118, "Гусев Артём", 4102, "Конференция «Логистика 2026»",
-                  "Атлант Групп", "storekeeper", "2026-08-17T08:05:00Z", nil),
+                  "АРТ", "storekeeper", "2026-08-17T08:05:00Z", nil),
             shift(1077, "Петров Дмитрий", 4098, "Свадьба Королёвых — Loft Hall",
-                  "Гранд Холл", "member", "2026-08-16T10:02:00Z", "2026-08-16T23:40:00Z"),
+                  "А+", "member", "2026-08-16T10:02:00Z", "2026-08-16T23:40:00Z"),
             shift(1103, "Ёлкина Марина Андреевна", 4098, "Свадьба Королёвых — Loft Hall",
-                  "Гранд Холл", "member", "2026-08-16T08:15:00Z", "2026-08-16T19:05:00Z")
+                  "А+", "member", "2026-08-16T08:15:00Z", "2026-08-16T19:05:00Z")
         ]
     }
 
@@ -121,9 +127,27 @@ final class MockDashboardService: DashboardServicing {
         return rows.filter { String($0.event_id) == dealId }
     }
 
-    private func event(_ id: Int, _ name: String, viewed: Bool) -> DashEventDTO {
+    /// Карточка мероприятия в сводке. Числа не бутафория: по ним экран
+    /// показывает, сколько снимков в отчёте, сколько бумаг и кто ещё на смене.
+    private func event(_ id: Int, _ name: String, viewed: Bool,
+                       photos: Int, docs: Int, onShift: Int) -> DashEventDTO {
         DashEventDTO(id: id, name: name, viewed: viewed, photos_restricted: false,
-                     admins: nil, report_photos: nil, claims: nil, docs: nil, checkins: nil)
+                     admins: [DashAdminDTO(worker_id: 1050, fio: "Смирнова Ольга Ивановна")],
+                     report_photos: (0..<photos).map { _ in ReportPhotoDTO(thumb: nil, full: nil) },
+                     claims: nil,
+                     docs: (0..<docs).map {
+                         DocumentDTO(id: $0, type: "act", title: "Акт приёма оборудования",
+                                     file_name: "akt-\(id)-\($0).pdf", file_size: 302_000,
+                                     file_url: nil, download_url: nil, body: nil,
+                                     sent_to_tony: $0 == 0, created_at: nil)
+                     },
+                     checkins: (0..<onShift).map {
+                         CheckinDTO(worker_id: 1024 + $0, fio: ["Никитин А. С.", "Ковалёв И. П.", "Гусев А."][$0 % 3],
+                                    role: "member", checked_at: "2026-08-17T07:28:00Z", finished_at: nil,
+                                    geo_lat: 55.826, geo_lng: 37.392, finish_lat: nil, finish_lng: nil,
+                                    opened_by: nil, closed_by: nil,
+                                    edited_by: nil, edited_at: nil, edited_what: nil, photo_url: nil)
+                     })
     }
 
     private func shift(_ workerId: Int, _ fio: String, _ eventId: Int, _ eventName: String,
