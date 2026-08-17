@@ -107,6 +107,14 @@ final class ScreenshotTests: XCTestCase {
         }
         snap("login")
 
+        // По умолчанию снимаем вымышленные данные: на рабочем сервере чатов
+        // мероприятий нет, да и рабочие переписки в презентации ни к чему.
+        // Съёмку с сервера можно вернуть переменной SHOTS_DEMO=0.
+        if secret("SHOTS_DEMO") != "0" {
+            restartWithDemoData(reason: "выбран показ вымышленных данных")
+            return
+        }
+
         guard let user = secret("DEMO_LOGIN"), let pass = secret("DEMO_PASSWORD") else {
             XCTFail("Нет DEMO_LOGIN/DEMO_PASSWORD: без учётной записи внутрь приложения не попасть")
             return

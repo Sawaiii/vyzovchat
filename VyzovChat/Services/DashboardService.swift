@@ -67,10 +67,71 @@ final class RealDashboardService: DashboardServicing {
 }
 
 final class MockDashboardService: DashboardServicing {
-    func dashboard() async -> [DashCompanyDTO]? { [] }
-    func calendar(from: Date, to: Date) async -> [CalendarDayDTO]? { [] }
-    func day(_ date: String) async -> [DashEventDTO]? { [] }
+    /// Вымышленная сводка руководителя: две компании, свежие и уже просмотренные
+    /// мероприятия, смены за неделю — экран отчётов должен быть живым при съёмке.
+    func dashboard() async -> [DashCompanyDTO]? {
+        try? await Task.sleep(for: .milliseconds(400))
+        return [
+            DashCompanyDTO(name: "Атлант Групп", events: [
+                event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false),
+                event(4091, "Корпоратив «ТехноПром» — Резиденция", viewed: true),
+                event(4077, "Выставка «АгроЭкспо» — павильон 3", viewed: true)
+            ]),
+            DashCompanyDTO(name: "Гранд Холл", events: [
+                event(4098, "Свадьба Королёвых — Loft Hall", viewed: false),
+                event(4085, "Юбилей 50 лет — ресторан «Волга»", viewed: true)
+            ])
+        ]
+    }
+
+    func calendar(from: Date, to: Date) async -> [CalendarDayDTO]? {
+        [
+            CalendarDayDTO(date: "2026-08-17", total: 2, viewed: 0, new: 2),
+            CalendarDayDTO(date: "2026-08-16", total: 1, viewed: 1, new: 0),
+            CalendarDayDTO(date: "2026-08-15", total: 3, viewed: 2, new: 1),
+            CalendarDayDTO(date: "2026-08-14", total: 1, viewed: 1, new: 0),
+            CalendarDayDTO(date: "2026-08-12", total: 2, viewed: 2, new: 0)
+        ]
+    }
+
+    func day(_ date: String) async -> [DashEventDTO]? {
+        [event(4102, "Конференция «Логистика 2026» — Крокус Экспо", viewed: false)]
+    }
+
     func markViewed(dealId: String) async {}
-    func allShifts(from: Date?, to: Date?) async -> [ShiftRowDTO]? { [] }
-    func eventShifts(dealId: String) async -> [ShiftRowDTO]? { [] }
+
+    func allShifts(from: Date?, to: Date?) async -> [ShiftRowDTO]? {
+        try? await Task.sleep(for: .milliseconds(300))
+        return [
+            shift(1024, "Никитин Алексей Сергеевич", 4102, "Конференция «Логистика 2026»",
+                  "Атлант Групп", "senior", "2026-08-17T07:28:00Z", nil),
+            shift(1090, "Ковалёв Игорь Павлович", 4102, "Конференция «Логистика 2026»",
+                  "Атлант Групп", "member", "2026-08-17T06:55:00Z", "2026-08-17T15:10:00Z"),
+            shift(1118, "Гусев Артём", 4102, "Конференция «Логистика 2026»",
+                  "Атлант Групп", "storekeeper", "2026-08-17T08:05:00Z", nil),
+            shift(1077, "Петров Дмитрий", 4098, "Свадьба Королёвых — Loft Hall",
+                  "Гранд Холл", "member", "2026-08-16T10:02:00Z", "2026-08-16T23:40:00Z"),
+            shift(1103, "Ёлкина Марина Андреевна", 4098, "Свадьба Королёвых — Loft Hall",
+                  "Гранд Холл", "member", "2026-08-16T08:15:00Z", "2026-08-16T19:05:00Z")
+        ]
+    }
+
+    func eventShifts(dealId: String) async -> [ShiftRowDTO]? {
+        let rows = await allShifts(from: nil, to: nil) ?? []
+        return rows.filter { String($0.event_id) == dealId }
+    }
+
+    private func event(_ id: Int, _ name: String, viewed: Bool) -> DashEventDTO {
+        DashEventDTO(id: id, name: name, viewed: viewed, photos_restricted: false,
+                     admins: nil, report_photos: nil, claims: nil, docs: nil, checkins: nil)
+    }
+
+    private func shift(_ workerId: Int, _ fio: String, _ eventId: Int, _ eventName: String,
+                       _ company: String, _ role: String,
+                       _ from: String, _ to: String?) -> ShiftRowDTO {
+        ShiftRowDTO(worker_id: workerId, fio: fio, event_id: eventId, event_name: eventName,
+                    company_name: company, role: role, checked_at: from, finished_at: to,
+                    geo_lat: 55.826, geo_lng: 37.392, opened_by: nil, closed_by: nil,
+                    edited_by: nil, edited_at: nil, edited_what: nil)
+    }
 }

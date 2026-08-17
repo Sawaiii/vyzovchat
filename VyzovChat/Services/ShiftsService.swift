@@ -141,7 +141,29 @@ final class RealShiftsService: ShiftsServicing {
 }
 
 final class MockShiftsService: ShiftsServicing {
-    func shifts(dealId: String) async -> [CheckinDTO] { [] }
+    /// Вымышленные смены: одна идёт, одна закрыта, одну поправили руками —
+    /// на съёмке видно все три состояния сразу.
+    func shifts(dealId: String) async -> [CheckinDTO] {
+        try? await Task.sleep(for: .milliseconds(300))
+        return [
+            CheckinDTO(worker_id: 1024, fio: "Никитин Алексей Сергеевич", role: "senior",
+                       checked_at: "2026-08-17T07:28:00Z", finished_at: nil,
+                       geo_lat: 55.826, geo_lng: 37.392, finish_lat: nil, finish_lng: nil,
+                       opened_by: nil, closed_by: nil,
+                       edited_by: nil, edited_at: nil, edited_what: nil, photo_url: nil),
+            CheckinDTO(worker_id: 1090, fio: "Ковалёв Игорь Павлович", role: "member",
+                       checked_at: "2026-08-17T06:55:00Z", finished_at: "2026-08-17T15:10:00Z",
+                       geo_lat: 55.826, geo_lng: 37.392, finish_lat: 55.827, finish_lng: 37.393,
+                       opened_by: nil, closed_by: nil,
+                       edited_by: nil, edited_at: nil, edited_what: nil, photo_url: nil),
+            CheckinDTO(worker_id: 1118, fio: "Гусев Артём", role: "storekeeper",
+                       checked_at: "2026-08-17T08:05:00Z", finished_at: nil,
+                       geo_lat: 55.825, geo_lng: 37.391, finish_lat: nil, finish_lng: nil,
+                       opened_by: "Смирнова О. И.", closed_by: nil,
+                       edited_by: "Смирнова О. И.", edited_at: "2026-08-17T08:20:00Z",
+                       edited_what: "вход", photo_url: nil)
+        ]
+    }
     func checkIn(dealId: String, lat: Double, lng: Double, photoKey: String) async throws -> CheckinDTO {
         throw ShiftError.geoUnavailable
     }

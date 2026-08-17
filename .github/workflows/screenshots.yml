@@ -86,8 +86,7 @@ jobs:
         run: |
           set -eo pipefail
           if [ -z "$TEST_RUNNER_DEMO_LOGIN" ]; then
-            echo "::error::Не задан секрет DEMO_LOGIN — тесту нечем войти в приложение"
-            exit 1
+            echo "::warning::Нет секрета DEMO_LOGIN — экраны снимем на вымышленных данных"
           fi
           rm -rf Screenshots.xcresult
           xcodebuild test \

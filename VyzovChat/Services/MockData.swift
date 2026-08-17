@@ -1,7 +1,14 @@
 import Foundation
 
-/// Демо-данные для работы приложения без реального сервера.
+/// Вымышленные данные для работы приложения без реального сервера.
+///
+/// Включаются запуском с аргументом `-demoData` (см. `AppConfig.useMockData`).
+/// На них снимают экраны для презентации: рабочие переписки и заказы показывать
+/// нельзя, а пустые экраны ничего не рассказывают. Люди, компании и мероприятия
+/// здесь придуманы; совпадения с настоящими случайны.
 enum MockData {
+
+    // MARK: - Люди
 
     static let currentUser = User(
         id: "1024",
@@ -10,21 +17,42 @@ enum MockData {
         firstName: "Алексей",
         middleName: "Сергеевич",
         phone: "+7 900 123-45-67",
-        position: "Выездной техник",
+        position: "Руководитель работ",
         department: "Отдел мероприятий",
-        avatarURL: nil
+        avatarURL: nil,
+        fio: "Никитин Алексей Сергеевич",
+        login: "a.nikitin",
+        email: "a.nikitin@example.com",
+        isAdmin: true,
+        globalRole: "leader"
     )
 
     static let colleagues: [User] = [
         User(id: "1050", workerId: "1050", lastName: "Смирнова", firstName: "Ольга",
              middleName: "Ивановна", phone: "+7 900 555-11-22",
-             position: "Координатор", department: "Отдел мероприятий", avatarURL: nil),
+             position: "Координатор", department: "Отдел мероприятий", avatarURL: nil,
+             fio: "Смирнова Ольга Ивановна", login: "o.smirnova",
+             email: "o.smirnova@example.com", eventRole: "senior"),
         User(id: "1077", workerId: "1077", lastName: "Петров", firstName: "Дмитрий",
              middleName: nil, phone: "+7 900 777-33-44",
-             position: "Фотограф", department: "Медиа", avatarURL: nil),
+             position: "Фотограф", department: "Медиа", avatarURL: nil,
+             fio: "Петров Дмитрий", login: "d.petrov",
+             email: "d.petrov@example.com", eventRole: "member"),
         User(id: "1090", workerId: "1090", lastName: "Ковалёв", firstName: "Игорь",
              middleName: "Павлович", phone: "+7 900 888-99-00",
-             position: "Монтажник", department: "Логистика", avatarURL: nil)
+             position: "Монтажник", department: "Логистика", avatarURL: nil,
+             fio: "Ковалёв Игорь Павлович", login: "i.kovalev",
+             email: "i.kovalev@example.com", eventRole: "member"),
+        User(id: "1103", workerId: "1103", lastName: "Ёлкина", firstName: "Марина",
+             middleName: "Андреевна", phone: "+7 900 222-64-18",
+             position: "Декоратор", department: "Оформление", avatarURL: nil,
+             fio: "Ёлкина Марина Андреевна", login: "m.elkina",
+             email: "m.elkina@example.com", eventRole: "member"),
+        User(id: "1118", workerId: "1118", lastName: "Гусев", firstName: "Артём",
+             middleName: nil, phone: "+7 900 314-08-52",
+             position: "Звукорежиссёр", department: "Техническая служба", avatarURL: nil,
+             fio: "Гусев Артём", login: "a.gusev",
+             email: "a.gusev@example.com", eventRole: "storekeeper")
     ]
 
     static var allUsers: [User] { [currentUser] + colleagues }
@@ -33,23 +61,71 @@ enum MockData {
         allUsers.first { $0.workerId == id }
     }
 
+    // MARK: - Мероприятия
+
     static let deals: [Deal] = [
-        Deal(id: "3401", title: "Свадьба Королёвых — Loft Hall",
+        Deal(id: "4102",
+             title: "Конференция «Логистика 2026» — Крокус Экспо",
+             stage: .inProgress,
+             address: "Красногорск, Международная, 16",
+             eventDate: date(daysAgo: 0),
+             assignedUserIds: ["1024", "1050", "1090", "1118"],
+             responsibleId: "1050",
+             company: "Атлант Групп",
+             myRole: "senior"),
+        Deal(id: "4098",
+             title: "Свадьба Королёвых — Loft Hall",
              stage: .photoReport,
              address: "Москва, ул. Правды, 24",
              eventDate: date(daysAgo: 1),
-             assignedUserIds: ["1024", "1077", "1090"], responsibleId: "1050"),
-        Deal(id: "3388", title: "Корпоратив «ТехноПром»",
-             stage: .inProgress,
+             assignedUserIds: ["1024", "1077", "1103"],
+             responsibleId: "1050",
+             company: "Гранд Холл",
+             myRole: "admin"),
+        Deal(id: "4091",
+             title: "Корпоратив «ТехноПром» — Резиденция",
+             stage: .photoReport,
              address: "Москва, Красная Пресня, 12",
-             eventDate: date(daysAgo: 0),
-             assignedUserIds: ["1024", "1050"], responsibleId: "1050"),
-        Deal(id: "3355", title: "Юбилей 50 лет — Ресторан «Волга»",
+             eventDate: date(daysAgo: 2),
+             assignedUserIds: ["1024", "1050", "1077"],
+             responsibleId: "1050",
+             company: "Атлант Групп",
+             myRole: "member"),
+        Deal(id: "4085",
+             title: "Юбилей 50 лет — ресторан «Волга»",
              stage: .done,
              address: "Химки, Ленинградская, 1",
-             eventDate: date(daysAgo: 4),
-             assignedUserIds: ["1024", "1077"], responsibleId: "1050")
+             eventDate: date(daysAgo: 5),
+             assignedUserIds: ["1024", "1077", "1118"],
+             responsibleId: "1050",
+             rawStatus: "closed",
+             reportStatus: "sent",
+             company: "Гранд Холл",
+             myRole: "member"),
+        Deal(id: "4077",
+             title: "Выставка «АгроЭкспо» — павильон 3",
+             stage: .done,
+             address: "Москва, Профсоюзная, 84",
+             eventDate: date(daysAgo: 12),
+             assignedUserIds: ["1024", "1090"],
+             responsibleId: "1050",
+             archived: true,
+             rawStatus: "closed",
+             reportStatus: "sent",
+             company: "Атлант Групп",
+             myRole: "member"),
+        Deal(id: "4110",
+             title: "Форум «Медиа Старт» — Digital October",
+             stage: .prepare,
+             address: "Москва, Берсеневская наб., 6",
+             eventDate: date(daysAgo: -3),
+             assignedUserIds: ["1024", "1050", "1103"],
+             responsibleId: "1050",
+             company: "Медиа Старт",
+             myRole: "senior")
     ]
+
+    // MARK: - Чаты
 
     static func chats() -> [Chat] {
         deals.filter { $0.stage.createsChat }.map { deal in
@@ -58,44 +134,101 @@ enum MockData {
                  title: deal.title,
                  participantIds: deal.assignedUserIds,
                  lastMessagePreview: preview(for: deal),
-                 lastMessageDate: date(minutesAgo: Int.random(in: 5...600), seedString: deal.id),
-                 unreadCount: deal.id == "3388" ? 3 : 0,
-                 isPhotoReportOpen: deal.stage == .photoReport || deal.stage == .done)
+                 lastMessageDate: lastDate(for: deal),
+                 lastMessageIsMine: deal.id == "4091",
+                 unreadCount: unread(for: deal),
+                 isPhotoReportOpen: deal.stage == .photoReport || deal.stage == .done,
+                 isArchived: deal.archived,
+                 rawStatus: deal.rawStatus,
+                 reportStatus: deal.reportStatus,
+                 company: deal.company,
+                 isChatAdmin: deal.myRole == "admin" || deal.myRole == "senior",
+                 myRole: deal.myRole,
+                 address: deal.address)
         }
+        .sorted { ($0.lastMessageDate ?? .distantPast) > ($1.lastMessageDate ?? .distantPast) }
     }
 
     private static func preview(for deal: Deal) -> String {
-        switch deal.stage {
-        case .photoReport: return "Ольга: Готовы фото с площадки? 📸"
-        case .inProgress:  return "Игорь: Монтаж завершён, начинаем"
-        case .done:        return "Фотоотчёт отправлен на сервер ✓"
-        default:           return "Чат создан"
+        switch deal.id {
+        case "4102": return "Ольга: Сцена собрана, ждём звук"
+        case "4098": return "Дмитрий: Загрузил 148 кадров с площадки"
+        case "4091": return "Отчёт отправлен заказчику ✓"
+        case "4085": return "Игорь: Оборудование вернули на склад"
+        default:     return "Мероприятие завершено"
         }
     }
 
+    private static func unread(for deal: Deal) -> Int {
+        switch deal.id {
+        case "4102": return 4
+        case "4098": return 2
+        default:     return 0
+        }
+    }
+
+    private static func lastDate(for deal: Deal) -> Date {
+        switch deal.id {
+        case "4102": return date(minutesAgo: 6)
+        case "4098": return date(minutesAgo: 52)
+        case "4091": return date(minutesAgo: 340)
+        case "4085": return date(daysAgo: 4)
+        default:     return date(daysAgo: 11)
+        }
+    }
+
+    // MARK: - Переписка
+
     static func messages(chatId: String) -> [Message] {
         let dealId = chatId.replacingOccurrences(of: "chat-", with: "")
-        return [
-            Message(id: "\(chatId)-0", chatId: chatId, senderId: "",
-                    text: "Чат по заказу создан автоматически из Битрикса",
-                    attachments: [], sentAt: date(minutesAgo: 720, seedString: chatId), kind: .system),
-            Message(id: "\(chatId)-1", chatId: chatId, senderId: "1050",
-                    text: "Коллеги, всех добавила. Точка сбора — служебный вход в 9:00.",
-                    attachments: [], sentAt: date(minutesAgo: 700, seedString: chatId), kind: .text),
-            Message(id: "\(chatId)-2", chatId: chatId, senderId: "1090",
-                    text: "Принял, буду вовремя.",
-                    attachments: [], sentAt: date(minutesAgo: 650, seedString: chatId), kind: .text),
-            Message(id: "\(chatId)-3", chatId: chatId, senderId: "1024",
-                    text: "Площадка готова, приступаем к съёмке.",
-                    attachments: [], sentAt: date(minutesAgo: 120, seedString: chatId), kind: .text),
-            Message(id: "\(chatId)-4", chatId: chatId, senderId: "1077",
-                    text: "Несколько кадров с площадки 👇",
-                    attachments: (0..<3).map {
-                        Message.Attachment(id: "\(chatId)-att-\($0)", localImageName: nil,
-                                           remoteURL: nil, width: 1200, height: 1600)
-                    },
-                    sentAt: date(minutesAgo: 30, seedString: chatId + "img"), kind: .photo)
-        ].filter { _ in !dealId.isEmpty }
+        guard !dealId.isEmpty else { return [] }
+        switch dealId {
+        case "4102": return conferenceThread(chatId: chatId)
+        default:     return genericThread(chatId: chatId)
+        }
+    }
+
+    /// Мероприятие, которое идёт прямо сейчас, — самая живая переписка.
+    private static func conferenceThread(chatId: String) -> [Message] {
+        [
+            msg(chatId, 0, "", "Чат мероприятия создан автоматически", minutesAgo: 900, kind: .system),
+            msg(chatId, 1, "1050", "Коллеги, сбор в 7:30 у служебного входа. Пропуска на всех заказаны.", minutesAgo: 880),
+            msg(chatId, 2, "1090", "Принял. Фуру с конструкциями ждём к 8:00.", minutesAgo: 861),
+            msg(chatId, 3, "1024", "Пропуск на машину получил, отдам водителю на въезде.", minutesAgo: 848),
+            msg(chatId, 4, "1118", "Пульт и радиосистемы забрал со склада, комплект полный.", minutesAgo: 512),
+            msg(chatId, 5, "1090", "Сцена собрана, свет повесили. Осталась задняя ферма.", minutesAgo: 148),
+            msg(chatId, 6, "1050", "@Никитин Алексей заказчик просит добавить два микрофона на президиум", minutesAgo: 96),
+            msg(chatId, 7, "1024", "Сделаем, у Артёма есть запасные.", minutesAgo: 88),
+            msg(chatId, 8, "1118", "Поставил, проверил — работают.", minutesAgo: 74),
+            msg(chatId, 9, "1050", "Фото зала до начала 👇", minutesAgo: 61, kind: .photo, photos: 3),
+            msg(chatId, 10, "1024", "Отлично, отправляю заказчику.", minutesAgo: 44),
+            msg(chatId, 11, "1050", "Сцена собрана, ждём звук", minutesAgo: 6)
+        ]
+    }
+
+    private static func genericThread(chatId: String) -> [Message] {
+        [
+            msg(chatId, 0, "", "Чат мероприятия создан автоматически", minutesAgo: 1500, kind: .system),
+            msg(chatId, 1, "1050", "Всех добавила в чат. Точка сбора — служебный вход, 9:00.", minutesAgo: 1440),
+            msg(chatId, 2, "1103", "Оформление привезу к восьми, разгрузка со двора.", minutesAgo: 1380),
+            msg(chatId, 3, "1024", "Площадка готова, приступаем к съёмке.", minutesAgo: 420),
+            msg(chatId, 4, "1077", "Несколько кадров с площадки 👇", minutesAgo: 96, kind: .photo, photos: 3),
+            msg(chatId, 5, "1077", "Загрузил 148 кадров с площадки", minutesAgo: 52)
+        ]
+    }
+
+    private static func msg(_ chatId: String, _ index: Int, _ sender: String, _ text: String,
+                            minutesAgo: Int, kind: Message.Kind = .text, photos: Int = 0) -> Message {
+        Message(id: "\(chatId)-\(index)",
+                chatId: chatId,
+                senderId: sender,
+                text: text,
+                attachments: (0..<photos).map {
+                    Message.Attachment(id: "\(chatId)-att-\(index)-\($0)", localImageName: nil,
+                                       remoteURL: nil, width: 1200, height: 1600)
+                },
+                sentAt: date(minutesAgo: minutesAgo),
+                kind: kind)
     }
 
     // MARK: - Детерминированные даты (без Date() для предсказуемости превью)

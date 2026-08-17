@@ -35,7 +35,30 @@ final class RealDiskService: DiskServicing {
 }
 
 final class MockDiskService: DiskServicing {
-    func list(path: String) async -> DiskListDTO? { DiskListDTO(path: path, entries: []) }
+    /// Вымышленное содержимое диска — чтобы экран не выглядел пустым при съёмке.
+    func list(path: String) async -> DiskListDTO? {
+        try? await Task.sleep(for: .milliseconds(400))
+        let folders = [
+            "Конференция «Логистика 2026» (#4102)",
+            "Свадьба Королёвых — Loft Hall (#4098)",
+            "Корпоратив «ТехноПром» (#4091)",
+            "Юбилей 50 лет — ресторан «Волга» (#4085)",
+            "Выставка «АгроЭкспо» (#4077)"
+        ]
+        let files: [(String, Int)] = [
+            ("Смета мероприятия.pdf", 486_000),
+            ("Схема расстановки.pdf", 1_240_000),
+            ("Акт приёма оборудования.pdf", 302_000)
+        ]
+        let entries = folders.map {
+            DiskEntryDTO(name: $0, is_dir: true, key: "\(path)\($0)/", size: nil,
+                         url: nil, download_url: nil)
+        } + files.map {
+            DiskEntryDTO(name: $0.0, is_dir: false, key: "\(path)\($0.0)", size: $0.1,
+                         url: nil, download_url: nil)
+        }
+        return DiskListDTO(path: path, entries: entries)
+    }
     func delete(keys: [String]) async throws {}
     func notifyChanged() async {}
 }
