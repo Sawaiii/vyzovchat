@@ -117,8 +117,7 @@ final class ScreenshotTests: XCTestCase {
 
         // Вошли — это видно по полосе вкладок. Если её нет, дальше снимать нечего:
         // пусть прогон покраснеет здесь, а не отдаст десяток одинаковых кадров.
-        let chatsTab = app.buttons["Чаты"].firstMatch
-        XCTAssertTrue(chatsTab.waitForExistence(timeout: 60),
+        XCTAssertTrue(named("Чаты").waitForExistence(timeout: 60),
                       "Вход не прошёл: список чатов не появился")
     }
 
@@ -136,17 +135,31 @@ final class ScreenshotTests: XCTestCase {
     /// Ждём появления надписи — признак того, что экран дорисовался.
     @discardableResult
     private func wait(for label: String, timeout: TimeInterval = 30) -> Bool {
-        let element = app.staticTexts[label].firstMatch
-        return element.waitForExistence(timeout: timeout)
+        return named(label).waitForExistence(timeout: timeout)
+    }
+
+    /// Элемент по подписи, любого типа.
+    ///
+    /// Полоса вкладок нарисована своими кнопками со стилем `.plain`, и в дереве
+    /// доступности «Чаты» приходит надписью, а не кнопкой. Поэтому ищем по
+    /// подписи среди всего, а не в конкретной коллекции.
+    private func named(_ label: String) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@", label)
+        let button = app.buttons.matching(predicate).firstMatch
+        if button.exists { return button }
+        let text = app.staticTexts.matching(predicate).firstMatch
+        if text.exists { return text }
+        return app.descendants(matching: .any).matching(predicate).firstMatch
     }
 
     /// Переключает вкладку. Возвращает `false`, если такой вкладки нет —
     /// у рядового сотрудника, например, нет «Отчётов».
     @discardableResult
     private func tapTab(_ title: String) -> Bool {
-        let tab = app.buttons[title].firstMatch
-        guard tab.waitForExistence(timeout: 10), tab.isHittable else { return false }
-        tab.tap()
+        let tab = named(title)
+        guard tab.waitForExistence(timeout: 10) else { return false }
+        // По надписи внутри кнопки система не даёт нажать напрямую — жмём в её точку.
+        if tab.isHittable { tab.tap() } else { tab.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap() }
         settle()
         return true
     }
@@ -175,9 +188,9 @@ final class ScreenshotTests: XCTestCase {
     /// заданы через `accessibilityLabel` — искать по ним надёжнее, чем по значку.
     @discardableResult
     private func tapButton(_ title: String, timeout: TimeInterval = 8) -> Bool {
-        let button = app.buttons[title].firstMatch
-        guard button.waitForExistence(timeout: timeout), button.isHittable else { return false }
-        button.tap()
+        let button = named(title)
+        guard button.waitForExistence(timeout: timeout) else { return false }
+        if button.isHittable { button.tap() } else { button.coordinate(withNormalizedOffset: .init(dx: 0.5, dy: 0.5)).tap() }
         settle()
         return true
     }
