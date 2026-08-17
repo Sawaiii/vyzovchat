@@ -1,0 +1,20 @@
+Application, 0x1040a98d0, pid: 10237, label: 'Vyzov Chat' <App element pid: 10237>
+  Window (Main), 0x1040a8920, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4306613632.4>
+    Other, 0x104047b90, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4306621040.5>
+      Other, 0x1040aaa20, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304760480.6>
+        Other, 0x1040a85a0, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4307659600.7>
+          Other, 0x104053260, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4308148000.8>
+            Other, 0x1040aa270, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304919600.9>
+              Other, 0x10409f120, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304478128.10>
+                Other, 0x1040a0f30, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304957936.11>
+                  Other, 0x1040a1050, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4307912752.12>
+                    Other, 0x1040a1170, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4305210832.13>
+                      Image, 0x1040a1290, {{155.0, 260.7}, {92.0, 92.0}}, label: 'Logo' <AX element pid: 10237, elementOrHash.elementID: 4306964176.14>
+                      StaticText, 0x1040a13b0, {{110.7, 368.7}, {180.7, 40.7}}, label: 'Vyzov Chat' <AX element pid: 10237, elementOrHash.elementID: 4306934400.15>
+                      StaticText, 0x1040a14d0, {{42.2, 413.3}, {317.7, 18.0}}, label: 'Рабочий мессенджер для выездных команд' <AX element pid: 10237, elementOrHash.elementID: 4306935184.16>
+                      Button, 0x1040536a0, {{20.0, 654.0}, {362.0, 54.0}}, label: 'Войти' <AX element pid: 10237, elementOrHash.elementID: 4308151648.17>
+                      Button, 0x1040537c0, {{20.0, 720.0}, {362.0, 54.0}}, label: 'Регистрация' <AX element pid: 10237, elementOrHash.elementID: 4305206128.18>
+                      Button, 0x1040538e0, {{79.3, 790.0}, {243.3, 18.0}}, label: 'У меня есть ссылка-приглашение' <AX element pid: 10237, elementOrHash.elementID: 4305209936.19>
+  Window, 0x104053a00, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4313531392.43>
+    Other, 0x104053b20, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4686161984.45>
+      Other, 0x104053c40, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4686174752.47>

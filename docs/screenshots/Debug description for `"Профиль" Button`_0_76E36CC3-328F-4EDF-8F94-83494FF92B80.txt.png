@@ -1,0 +1,5 @@
+Query chain:
+ →Find: Target Application 'ru.vyzovchat.app'
+  ↪︎Find: Descendants matching type Button
+    ↪︎Find: Elements matching predicate '"Профиль" IN identifiers'
+      ↪︎Find: First Match

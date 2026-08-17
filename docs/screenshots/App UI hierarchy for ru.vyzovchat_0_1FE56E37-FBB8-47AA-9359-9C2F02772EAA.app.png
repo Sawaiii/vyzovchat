@@ -1,0 +1,37 @@
+Application, 0x10413bac0, pid: 10237, label: 'Vyzov Chat' <App element pid: 10237>
+  Window (Main), 0x1041722d0, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4306613632.4>
+    Other, 0x104131070, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4306621040.5>
+      Other, 0x10416fb70, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304760480.6>
+        Other, 0x104176350, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4307659600.7>
+          Other, 0x104173f40, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4308148000.8>
+            Other, 0x10416dd30, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304919600.9>
+              NavigationBar, 0x10416de50, {{0.0, 56.3}, {402.0, 44.0}}, identifier: 'Вход' <AX element pid: 10237, elementOrHash.elementID: 4306647056.20>
+                Button, 0x10416df70, {{0.0, 56.3}, {79.7, 44.0}}, identifier: 'BackButton', label: 'Назад' <AX element pid: 10237, elementOrHash.elementID: 105553140876928.21>
+                StaticText, 0x10416e090, {{180.7, 68.0}, {41.0, 20.3}}, label: 'Вход' <AX element pid: 10237, elementOrHash.elementID: 4308218880.22>
+              Other, 0x10416e1b0, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304478128.10>
+                Other, 0x10416e2d0, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4304957936.11>
+                  Other, 0x10416e3f0, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4307003872.23>
+                    Other, 0x10416e510, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4307134496.24>
+                      ScrollView, 0x10416e630, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4320363008.25>
+                        Other, 0x10416e750, {{0.0, 100.3}, {402.0, 475.3}} <AX element pid: 10237, elementOrHash.elementID: 4305206560.26>
+                          StaticText, 0x10416e870, {{20.0, 124.3}, {210.7, 26.3}}, label: 'С возвращением 👋' <AX element pid: 10237, elementOrHash.elementID: 4307001984.28>
+                          StaticText, 0x10416e990, {{20.0, 154.7}, {207.3, 18.0}}, label: 'Войдите по логину и паролю' <AX element pid: 10237, elementOrHash.elementID: 4306733888.29>
+                          Image, 0x10416eab0, {{40.0, 216.3}, {14.0, 15.0}}, identifier: 'person.fill', label: 'person.fill' <AX element pid: 10237, elementOrHash.elementID: 4306953152.30>
+                          TextField, 0x10416ebd0, {{70.0, 212.7}, {296.0, 22.0}}, placeholderValue: 'Логин', value: admin <AX element pid: 10237, elementOrHash.elementID: 4312965632.31>
+                          Image, 0x104176570, {{41.3, 281.7}, {11.3, 16.3}}, identifier: 'lock.fill', label: 'Заблокировать' <AX element pid: 10237, elementOrHash.elementID: 4306967168.32>
+                          TextField, 0x104176690, {{70.0, 278.7}, {257.7, 22.0}}, placeholderValue: 'Пароль' <AX element pid: 10237, elementOrHash.elementID: 4362366976.120>
+                          Button, 0x1041767b0, {{339.7, 279.7}, {26.3, 20.0}}, identifier: 'eye.slash', label: 'Скрыть' <AX element pid: 10237, elementOrHash.elementID: 4307044688.34>
+                          Button, 0x1041768d0, {{20.0, 340.7}, {362.0, 54.0}}, label: 'Войти', Disabled <AX element pid: 10237, elementOrHash.elementID: 4307045584.35>
+                          Button, 0x1041769f0, {{20.0, 418.7}, {362.0, 54.0}}, label: 'Войти через Яндекс' <AX element pid: 10237, elementOrHash.elementID: 4307109168.36>
+                            Image, 0x104176b10, {{106.7, 436.3}, {19.0, 19.0}}, identifier: 'person.badge.key.fill', label: 'person.badge.key.fill' <AX element pid: 10237, elementOrHash.elementID: 4307046016.41>
+                            StaticText, 0x104176c30, {{130.8, 435.5}, {166.7, 20.3}}, label: 'Войти через Яндекс' <AX element pid: 10237, elementOrHash.elementID: 4307046800.42>
+                          Button, 0x104176d50, {{153.3, 496.7}, {95.7, 14.3}}, label: 'Забыли пароль?' <AX element pid: 10237, elementOrHash.elementID: 4307110064.37>
+                          StaticText, 0x104176e70, {{58.0, 547.0}, {286.0, 13.3}}, label: 'Продолжая, вы принимаете правила использования' <AX element pid: 10237, elementOrHash.elementID: 4307110960.38>
+                          Button, 0x104176f90, {{117.3, 562.3}, {167.3, 13.3}}, label: 'Правила и обработка данных' <AX element pid: 10237, elementOrHash.elementID: 4307111392.39>
+                        Other, 0x1041770b0, {{369.0, 100.3}, {30.0, 717.7}}, label: 'Вертикальная полоса прокрутки, 1 страница', value: 0 % <AX element pid: 10237, elementOrHash.elementID: 4305318704.27>
+                          Other, 0x1041771d0, {{396.0, 367.7}, {3.0, 447.3}} <AX element pid: 10237, elementOrHash.elementID: 4305307008.40>
+                        Other, 0x1041772f0, {{369.0, 100.3}, {30.0, 717.7}}, label: 'Вертикальная полоса прокрутки, 1 страница', value: 0 % <AX element pid: 10237, elementOrHash.elementID: 4305318704.27>
+                          Other, 0x104177410, {{396.0, 367.7}, {3.0, 447.3}} <AX element pid: 10237, elementOrHash.elementID: 4305307008.40>
+  Window, 0x104177530, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4313531392.43>
+    Other, 0x104177650, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4686161984.45>
+      Other, 0x104177770, {{0.0, 0.0}, {402.0, 874.0}} <AX element pid: 10237, elementOrHash.elementID: 4686174752.47>

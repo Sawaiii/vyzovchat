@@ -1,0 +1,6 @@
+Query chain:
+ →Find: Target Application 'ru.vyzovchat.app'
+  ↪︎Find: Descendants matching type NavigationBar
+    ↪︎Find: Descendants matching type Button
+      ↪︎Find: Elements matching predicate 'label CONTAINS[c] "ellipsis" OR label CONTAINS[c] "Ещё"'
+        ↪︎Find: First Match
