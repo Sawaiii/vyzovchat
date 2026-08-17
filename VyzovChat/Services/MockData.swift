@@ -236,7 +236,7 @@ enum MockData {
 
     /// Условный снимок с площадки из ресурсов приложения. Это не фотография
     /// мероприятия, а нарисованный фон: тёмный зал, свет приборов, расфокус.
-    private static func demoPhoto(_ index: Int) -> URL? {
+    static func demoPhoto(_ index: Int) -> URL? {
         let names = ["demo-photo-1", "demo-photo-2", "demo-photo-3", "demo-photo-4"]
         return Bundle.main.url(forResource: names[index % names.count], withExtension: "jpg")
     }

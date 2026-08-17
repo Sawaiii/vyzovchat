@@ -133,7 +133,10 @@ final class MockDashboardService: DashboardServicing {
                        photos: Int, docs: Int, onShift: Int) -> DashEventDTO {
         DashEventDTO(id: id, name: name, viewed: viewed, photos_restricted: false,
                      admins: [DashAdminDTO(worker_id: 1050, fio: "Смирнова Ольга Ивановна")],
-                     report_photos: (0..<photos).map { _ in ReportPhotoDTO(thumb: nil, full: nil) },
+                     report_photos: (0..<photos).map { i in
+                         let url = MockData.demoPhoto(i)?.absoluteString
+                         return ReportPhotoDTO(thumb: url, full: url)
+                     },
                      claims: nil,
                      docs: (0..<docs).map {
                          DocumentDTO(id: $0, type: "act", title: "Акт приёма оборудования",
