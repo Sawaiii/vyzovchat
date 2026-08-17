@@ -138,7 +138,9 @@ struct ChatView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, Spacing.xs)
-                    .background(Theme.panel.opacity(0.6))
+                    // Непрозрачно: сквозь полупрозрачную панель светлые обои
+                    // просвечивали, и серые подписи этапов по ним не читались.
+                    .background(Theme.panel)
 
                     TopicBar(
                         topics: model.topics,
@@ -1331,7 +1333,9 @@ private struct DaySeparator: View {
         Text(title)
             .font(Typography.caption).foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, Spacing.s).padding(.vertical, 4)
-            .background(Theme.panel.opacity(0.7), in: Capsule())
+            // Непрозрачная капсула: на светлых обоях дата сквозь полупрозрачную
+            // подложку читалась серым по сиреневому.
+            .background(Theme.bubbleOther, in: Capsule())
             .padding(.vertical, Spacing.xs)
     }
 }

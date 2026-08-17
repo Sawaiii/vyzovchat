@@ -74,7 +74,9 @@ struct TopicBar: View {
             .padding(.vertical, 4)
         }
         .horizontalStrip()
-        .background(Theme.panel.opacity(0.6))
+        // Непрозрачно — как и панель выше: сквозь полупрозрачную подложку
+        // светлые обои просвечивали и съедали названия невыбранных тем.
+        .background(Theme.panel)
     }
 
     private func chipId(_ id: Int?) -> String { id.map(String.init) ?? "main" }

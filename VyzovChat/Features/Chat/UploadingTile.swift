@@ -37,7 +37,9 @@ struct UploadingTile: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, Spacing.s)
-        .glass(cornerRadius: Theme.cornerMedium, elevated: false)
+        // Непрозрачная подложка: строка лежит прямо на обоях, а приглушённый
+        // вариант панели на светлом цвете мероприятия просвечивал насквозь.
+        .glass(cornerRadius: Theme.cornerMedium)
     }
 
     private var tile: some View {

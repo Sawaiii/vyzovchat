@@ -274,6 +274,15 @@ struct MessageBubble: View {
                 .fill(Theme.accent.opacity(highlighted ? 0.35 : 0))
                 .animation(.easeInOut(duration: 0.4), value: highlighted)
         )
+        // Тёмный контур по краю. Свой пузырь — синий средней темноты, и на
+        // светлых обоях (сирень, мята) его край растворяется: разница с фоном
+        // около двух крат, этого мало. Контур даёт границу независимо от того,
+        // светлее фон пузыря или темнее; белая обводка, как на прочих панелях
+        // приложения, на светлых обоях не сработала бы.
+        .overlay(
+            BubbleShape(isMine: isMine)
+                .stroke(Color.black.opacity(0.28), lineWidth: 0.5)
+        )
         .onLongPressGesture(minimumDuration: Self.longPress, maximumDistance: 10) {
             Haptics.tap()
             onLongPress()
@@ -474,7 +483,7 @@ struct MessageBubble: View {
         }
         .padding(Spacing.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+        .chatOverlay(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous), tint: tint)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
                 .stroke(tint.opacity(0.35), lineWidth: 0.5)
@@ -510,7 +519,7 @@ struct MessageBubble: View {
         }
         .foregroundStyle(style.color)
         .padding(.horizontal, Spacing.s).padding(.vertical, 6)
-        .background(style.color.opacity(0.14), in: Capsule())
+        .chatOverlay(Capsule(), tint: style.color)
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.xs)
     }
