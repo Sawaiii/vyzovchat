@@ -104,21 +104,41 @@ final class ScreenshotTests: XCTestCase {
             return
         }
 
-        login.tap()
-        login.typeText(user)
+        type(user, into: login)
 
         let password = app.secureTextFields["Пароль"]
         if password.waitForExistence(timeout: 5) {
-            password.tap()
-            password.typeText(pass)
+            type(pass, into: password)
         }
 
-        app.buttons["Войти"].firstMatch.tap()
+        let submit = app.buttons["Войти"].firstMatch
+        XCTAssertTrue(submit.isEnabled, "Кнопка входа осталась выключенной — поля заполнились не полностью")
+        submit.tap()
 
         // Вошли — это видно по полосе вкладок. Если её нет, дальше снимать нечего:
         // пусть прогон покраснеет здесь, а не отдаст десяток одинаковых кадров.
-        XCTAssertTrue(named("Чаты").waitForExistence(timeout: 60),
-                      "Вход не прошёл: список чатов не появился")
+        guard named("Чаты").waitForExistence(timeout: 60) else {
+            // Сервер мог ответить отказом — тогда причина написана прямо на экране.
+            let banner = app.staticTexts.allElementsBoundByIndex
+                .map(\.label)
+                .first { $0.contains("парол") || $0.contains("сотрудник") || $0.contains("связи") }
+            XCTFail("Вход не прошёл: список чатов не появился. Экран сообщает: \(banner ?? "ничего")")
+            return
+        }
+    }
+
+    /// Заполняет поле. Защищённое поле в симуляторе нередко не принимает первый
+    /// ввод сразу после наведения фокуса — тогда набираем ещё раз, уже в то поле,
+    /// которое система считает активным.
+    private func type(_ text: String, into field: XCUIElement) {
+        field.tap()
+        _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+        field.typeText(text)
+
+        let filled = (field.value as? String).map { $0 != field.placeholderValue } ?? false
+        if !filled {
+            app.typeText(text)
+        }
     }
 
     /// Значение секрета. `xcodebuild` отдаёт его без префикса, но на всякий
