@@ -140,6 +140,16 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             uiImage = cached
             return
         }
+        // Картинка из самого приложения (демо-режим): читаем с диска, без сети
+        // и без повторов — сетевой путь для файла лишний.
+        if url.isFileURL {
+            if let data = try? Data(contentsOf: url),
+               let img = ImageDecoding.downsample(data: data, maxPixel: 1400) {
+                ImageMemoryCache.thumbnails.setObject(img, forKey: key, cost: ImageMemoryCache.cost(img))
+                uiImage = img
+            }
+            return
+        }
         // Две попытки, а не четыре: при таймауте в 12 секунд четыре подряд давали
         // почти минуту висящих запросов на КАЖДУЮ плитку — приложение из-за этого
         // казалось зависшим. Один повтор закрывает случайный сбой, а безнадёжную

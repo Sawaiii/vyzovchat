@@ -225,15 +225,24 @@ enum MockData {
                 text: text,
                 attachments: (0..<photos).map {
                     Message.Attachment(id: "\(chatId)-att-\(index)-\($0)", localImageName: nil,
-                                       remoteURL: nil, width: 1200, height: 1600)
+                                       remoteURL: demoPhoto($0), width: 1200, height: 1600)
                 },
                 sentAt: date(minutesAgo: minutesAgo),
                 kind: kind)
     }
 
-    // MARK: - Детерминированные даты (без Date() для предсказуемости превью)
+    /// Условный снимок с площадки из ресурсов приложения. Это не фотография
+    /// мероприятия, а нарисованный фон: тёмный зал, свет приборов, расфокус.
+    private static func demoPhoto(_ index: Int) -> URL? {
+        let names = ["demo-photo-1", "demo-photo-2", "demo-photo-3", "demo-photo-4"]
+        return Bundle.main.url(forResource: names[index % names.count], withExtension: "jpg")
+    }
 
-    private static let anchor = Date(timeIntervalSince1970: 1_752_600_000) // фикс. «сейчас»
+    // MARK: - Даты
+
+    /// «Сейчас» на момент запуска: на экранах должны быть свежие даты,
+    /// иначе список выглядит заброшенным.
+    private static let anchor = Date()
 
     static func date(daysAgo: Int) -> Date {
         anchor.addingTimeInterval(TimeInterval(-daysAgo * 86_400))

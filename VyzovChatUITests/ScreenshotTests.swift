@@ -287,10 +287,12 @@ final class ScreenshotTests: XCTestCase {
 
     /// Меню «…» в панели переписки. У кнопки нет подписи, поэтому берём её по значку.
     private func openChatMenu() -> Bool {
-        let menu = app.navigationBars.buttons.matching(
-            NSPredicate(format: "label CONTAINS[c] 'ellipsis' OR label CONTAINS[c] 'Ещё'")
-        ).firstMatch
-        guard menu.waitForExistence(timeout: 8), menu.isHittable else { return false }
+        let bar = app.navigationBars.firstMatch
+        guard bar.waitForExistence(timeout: 8) else { return false }
+
+        // Подписи у кнопки нет, зато она крайняя справа — берём последнюю в панели.
+        let buttons = bar.buttons.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+        guard let menu = buttons.last else { return false }
         menu.tap()
         settle()
         return true
