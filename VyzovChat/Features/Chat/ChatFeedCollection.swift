@@ -563,6 +563,10 @@ extension ChatFeedCollection {
                 }
                 return
             }
+            // Просьба, которую не удалось выполнить раньше (строки ещё не было):
+            // пробуем на каждой раскладке, пока не выйдет или пока ленту не
+            // тронут рукой. Это дешевле и честнее очереди таймеров.
+            if runPendingRequest() { return }
             // Лента растёт (докрутились картинки, приехали строки), а человек
             // стоит в конце — держим конец. Под рукой не трогаем.
             guard stickToBottom, !collection.isDragging, !collection.isDecelerating else { return }

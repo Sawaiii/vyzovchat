@@ -703,14 +703,20 @@ struct ChatView: View {
                 // момент прокрутки. Прежняя лента мерила его SwiftUI-геометрией,
                 // но внутри ячейки такой замер устаревает — ячейку двигает
                 // прокрутка, а SwiftUI об этом не пересчитывается.
-                if let frame = feeds.windowFrame(forItem: message.id, page: pageKey) {
-                    menuFrame = frame.offsetBy(dx: -chatOrigin.x, dy: -chatOrigin.y)
-                    menuFrameId = message.id
-                }
                 // Пружину заводит сама строка (`PressPop`) — здесь остаётся
                 // только показать меню.
                 pop()
-                withAnimation(.smooth(duration: 0.16)) { menuMessage = message }
+                // Кадр и само меню — одной анимацией. Порознь части меню
+                // появлялись вне анимации: их вставка приходилась на переход,
+                // который никто не анимировал, — и меню «возникало» рывком.
+                let frame = feeds.windowFrame(forItem: message.id, page: pageKey)
+                withAnimation(.smooth(duration: 0.16)) {
+                    if let frame {
+                        menuFrame = frame.offsetBy(dx: -chatOrigin.x, dy: -chatOrigin.y)
+                        menuFrameId = message.id
+                    }
+                    menuMessage = message
+                }
             },
             onReact: { emoji in model.toggleReaction(message, emoji: emoji) },
             onOpenProfile: { id in profileUser = model.user(for: id) },
