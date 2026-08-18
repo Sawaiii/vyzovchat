@@ -279,11 +279,11 @@ extension ChatFeedCollection {
 
         /// Лента у конца (с запасом в экранный палец) — по этому показывается
         /// кнопка «вниз» и по нему же запоминается позиция страницы.
-        private var pinnedToBottom = true
+        private var pinnedToBottom = false
         /// Лента РОВНО в конце: только тогда она следует за растущим
         /// содержимым. С запасом нельзя — человека, стоящего в двух десятках
         /// точек от конца, дотягивало бы вниз при каждой подгрузке картинки.
-        private var stickToBottom = true
+        private var stickToBottom = false
         private var reportedAtBottom = true
         /// Первую позицию (запомненную или конец ленты) ставим один раз.
         private var didPlaceInitially = false
@@ -552,6 +552,9 @@ extension ChatFeedCollection {
         /// доехала ли прокрутка, и удержать ленту в конце, когда она там стоит.
         private func listDidLayout() {
             guard let collection else { return }
+            // Страница может быть уложена с нулевой высотой (её ещё не показали):
+            // считать по такой геометрии нечего, и попытки на неё тратить нельзя.
+            guard collection.bounds.height > 1 else { return }
             if let (request, checks) = awaiting {
                 if collection.isDragging || collection.isDecelerating || checks <= 0 {
                     awaiting = nil
