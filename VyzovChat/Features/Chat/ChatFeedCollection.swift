@@ -287,6 +287,10 @@ extension ChatFeedCollection {
         private var reportedAtBottom = true
         /// Первую позицию (запомненную или конец ленты) ставим один раз.
         private var didPlaceInitially = false
+        /// Едет наша собственная анимация прокрутки. Пока она едет, поправлять
+        /// смещение нельзя: любая поправка обрывает анимацию на полпути — со
+        /// стороны это выглядит как тот же телепорт.
+        private var animatingScroll = false
         /// Цель, до которой прокрутка ещё не подтверждена. Проверяется по факту
         /// раскладки и сама себя прекращает: либо доехали, либо кончились попытки.
         private var awaiting: (request: ChatFeedRequest, checks: Int)?
@@ -402,10 +406,11 @@ extension ChatFeedCollection {
                 if self.runPendingRequest() { return }
                 if !self.didPlaceInitially {
                     self.placeInitially()
-                } else if shouldStick {
+                } else if shouldStick, !self.animatingScroll {
                     // Лента стояла в конце — там и остаётся. Если человек читал
                     // середину, смещение не трогаем вовсе: новые строки дописаны
-                    // ниже и на его место не влияют.
+                    // ниже и на его место не влияют. Пока едет наша анимация —
+                    // тоже не трогаем: она сама придёт в конец.
                     _ = self.perform(ChatFeedRequest(id: nil, position: .bottom, animated: false))
                 }
             }
@@ -444,21 +449,14 @@ extension ChatFeedCollection {
             collection.layoutIfNeeded()
 
             guard let id = request.id, let ip = indexPath(for: id) else {
-                // Конец ленты. Анимируем, только если он близко: издалека
-                // анимировать нечего — цель по дороге уезжает (см. settleAtBottom).
-                let far = bottomOffset() - collection.contentOffset.y > collection.bounds.height * 3
-                if request.animated && !far, let last = lastIndexPath {
-                    awaiting = (request, 6)
-                    collection.scrollToItem(at: last, at: .bottom, animated: true)
-                } else {
-                    settleAtBottom()
-                }
+                if request.animated { flyToBottom(request) } else { settleAtBottom() }
                 updateAtBottom()
                 return true
             }
 
             if request.animated {
                 awaiting = (request, 6)
+                animatingScroll = true
                 collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: true)
                 return true
             }
@@ -471,6 +469,34 @@ extension ChatFeedCollection {
             awaiting = (request, 6)
             updateAtBottom()
             return true
+        }
+
+        /// Быстро проехать в конец ленты — по кнопке «вниз».
+        ///
+        /// Просто анимировать нельзя: пока анимация едет, ячейки по дороге
+        /// измеряются, конец отодвигается вниз, и доехать до него анимация не
+        /// может в принципе. Поэтому сначала находим настоящий конец
+        /// (`settleAtBottom`, всё в одном кадре — этого не видно), затем
+        /// отступаем на пару экранов назад и проезжаем анимацией именно их: эти
+        /// экраны уже измерены, и цель больше никуда не уедет.
+        ///
+        /// Отступ — не больше того расстояния, что человек и так прошёл бы: если
+        /// он был в полуэкране от конца, поедет ровно этот полуэкран, без скачка.
+        private func flyToBottom(_ request: ChatFeedRequest) {
+            guard let collection else { return }
+            let start = collection.contentOffset.y
+            settleAtBottom()
+            let bottom = collection.contentOffset.y
+            let runway = min(bottom - start, collection.bounds.height * 2)
+            guard runway > 1 else { return }
+
+            collection.setContentOffset(CGPoint(x: 0, y: clamp(bottom - runway)), animated: false)
+            collection.layoutIfNeeded()
+            // После укладки разбега конец мог уточниться ещё раз — берём свежий.
+            let target = bottomOffset()
+            awaiting = (request, 6)
+            animatingScroll = true
+            collection.setContentOffset(CGPoint(x: 0, y: target), animated: true)
         }
 
         /// Встать в самый конец ленты.
@@ -580,6 +606,9 @@ extension ChatFeedCollection {
             // Страница может быть уложена с нулевой высотой (её ещё не показали):
             // считать по такой геометрии нечего, и попытки на неё тратить нельзя.
             guard collection.bounds.height > 1 else { return }
+            // Пока едет наша анимация — не трогаем ничего: любая поправка
+            // оборвала бы её на полпути.
+            guard !animatingScroll else { return }
             if let (request, checks) = awaiting {
                 if collection.isDragging || collection.isDecelerating || checks <= 0 {
                     awaiting = nil
@@ -661,11 +690,13 @@ extension ChatFeedCollection {
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             awaiting = nil
+            animatingScroll = false
             store?.dropRequest(for: pageKey)
             onUserScroll()
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+            animatingScroll = false
             guard let (request, _) = awaiting else { return }
             awaiting = nil
             // Доводка после анимации: без анимации и на считаные точки — её не
