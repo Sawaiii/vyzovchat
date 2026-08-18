@@ -667,7 +667,9 @@ struct ChatView: View {
     private func rowContent(_ row: ChatFeedRow, pageKey: String) -> some View {
         switch row.item {
         case .separator(let title, _):
-            DaySeparator(title: title)
+            // По центру строки: в прежнем списке это делал сам VStack, а ячейка
+            // выравнивания за собой не приносит.
+            DaySeparator(title: title).frame(maxWidth: .infinity)
         case .uploading(let pending):
             UploadingTile(pending: pending)
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -705,9 +707,10 @@ struct ChatView: View {
                     menuFrame = frame.offsetBy(dx: -chatOrigin.x, dy: -chatOrigin.y)
                     menuFrameId = message.id
                 }
+                // Пружину заводит сама строка (`PressPop`) — здесь остаётся
+                // только показать меню.
                 pop()
                 withAnimation(.smooth(duration: 0.16)) { menuMessage = message }
-                menuPop = true
             },
             onReact: { emoji in model.toggleReaction(message, emoji: emoji) },
             onOpenProfile: { id in profileUser = model.user(for: id) },

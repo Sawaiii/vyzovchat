@@ -59,6 +59,14 @@ struct ChatFeedCollection: UIViewRepresentable {
         coordinator.apply(rows: rows, revision: revision)
     }
 
+    /// Лента занимает всё предложенное место — как и прежняя прокрутка. Без
+    /// этого размер брался бы у `UIView`, у которого его нет, и в стопке с
+    /// шапкой и строкой ввода лента могла бы схлопнуться.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ChatFeedHostView,
+                      context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
     static func dismantleUIView(_ host: ChatFeedHostView, coordinator: Coordinator) {
         coordinator.detach()
     }
@@ -420,7 +428,9 @@ extension ChatFeedCollection {
             pinnedToBottom = atBottom
             guard atBottom != reportedAtBottom else { return }
             reportedAtBottom = atBottom
-            onAtBottomChange(atBottom)
+            // Через цикл: считается это в том числе во время раскладки, а менять
+            // состояние SwiftUI прямо посреди его же обновления нельзя.
+            DispatchQueue.main.async { [onAtBottomChange] in onAtBottomChange(atBottom) }
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
