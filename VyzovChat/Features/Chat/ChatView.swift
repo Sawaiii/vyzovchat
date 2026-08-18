@@ -48,7 +48,7 @@ struct ChatView: View {
     @State private var settledTopics: Set<String> = []
     /// Ленты страниц (у пейджера тем их несколько) — через них просим прокрутку
     /// и узнаём, где на экране лежит сообщение.
-    @State private var feeds = ChatFeedRegistry()
+    @State private var feeds = ChatFeedStore()
     /// Где начинается чат в координатах окна: кадр сообщения новая лента отдаёт
     /// в оконных координатах, а меню раскладывается в координатах чата.
     @State private var chatOrigin: CGPoint = .zero
@@ -611,7 +611,7 @@ struct ChatView: View {
                 // Карта упоминаний общая для всех строк и приезжает позже
                 // сообщений: пока её нет, «@Иванов» в тексте не кликабелен.
                 revision: model.mentionIndex.count,
-                registry: feeds,
+                store: feeds,
                 pageKey: pageKey,
                 onAtBottomChange: { atBottom in if isActive { updateAtBottom(atBottom) } },
                 onUserScroll: { settleTask?.cancel() },
@@ -627,12 +627,12 @@ struct ChatView: View {
             }
             .modifier(FeedBehaviors(
                 view: self, isActive: isActive, pageKey: pageKey,
-                toBottom: { animated in feeds[pageKey]?.scrollToBottom(animated: animated) },
+                toBottom: { animated in feeds.scrollToBottom(page: pageKey, animated: animated) },
                 toItem: { id, position, animated in
-                    feeds[pageKey]?.scroll(to: id, position: position, animated: animated)
+                    feeds.scroll(to: id, page: pageKey, position: position, animated: animated)
                 }))
 
-            scrollDownButton { feeds[pageKey]?.scrollToBottom(animated: true) }
+            scrollDownButton { feeds.scrollToBottom(page: pageKey, animated: true) }
                 .opacity(isActive ? 1 : 0)
         }
     }
@@ -703,7 +703,7 @@ struct ChatView: View {
                 // момент прокрутки. Прежняя лента мерила его SwiftUI-геометрией,
                 // но внутри ячейки такой замер устаревает — ячейку двигает
                 // прокрутка, а SwiftUI об этом не пересчитывается.
-                if let frame = feeds[pageKey]?.windowFrame(forItem: message.id) {
+                if let frame = feeds.windowFrame(forItem: message.id, page: pageKey) {
                     menuFrame = frame.offsetBy(dx: -chatOrigin.x, dy: -chatOrigin.y)
                     menuFrameId = message.id
                 }

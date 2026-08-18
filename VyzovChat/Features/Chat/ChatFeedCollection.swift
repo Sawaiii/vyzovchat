@@ -8,16 +8,16 @@ import UIKit
 /// Зачем вообще: в ленивом списке SwiftUI прокрутка к сообщению целится по
 /// прикидке высот, а построенные по дороге строки эту прикидку меняют — переход
 /// не доезжал. Лечилось «доводчиками»: одна и та же прокрутка повторялась до
-/// семи раз (16…750 мс), и это ровно то, что видно как рывки. Здесь доводить
-/// нечего: у коллекции есть реальные атрибуты уже уложенных ячеек, и нужное
-/// смещение считается арифметикой — один проход, без таймеров.
+/// семи раз по таймеру (16…750 мс), и это ровно то, что видно как рывки. Здесь
+/// доводить нечего: у коллекции есть настоящие атрибуты уложенных ячеек, и
+/// нужное смещение считается арифметикой. Если после укладки строка всё же не
+/// там, где надо (высоты уточнились), поправка идёт по факту раскладки, а не по
+/// таймеру, и сама себя прекращает.
 ///
-/// Что ещё чинится само собой:
-/// - **приход сообщения не двигает ленту.** В прижатой к низу SwiftUI-ленте
-///   новое сообщение подпирало содержимое снизу; здесь оно просто дописывается
-///   в конец, и если человек читает середину, у него ничего не уезжает.
-/// - **клавиатура.** Пока лента внизу, она внизу и остаётся: пересчёт идёт в
-///   `layoutSubviews`, а не гонкой анимаций.
+/// Что чинится само собой:
+/// - **приход сообщения не двигает ленту.** Новая строка дописывается в конец, и
+///   у того, кто читает середину, ничего не уезжает.
+/// - **клавиатура.** Пока лента внизу, она внизу и остаётся.
 struct ChatFeedCollection: UIViewRepresentable {
     /// Строки ленты вместе со всем, от чего зависит их вид: сравнением строк и
     /// решается, какую ячейку перерисовать.
@@ -27,8 +27,8 @@ struct ChatFeedCollection: UIViewRepresentable {
     /// Меняется, когда меняется общее для всех строк (карта упоминаний) —
     /// тогда перерисовываем всё видимое.
     var revision: Int = 0
-    /// Куда себя записать, чтобы чат мог попросить прокрутку и кадр сообщения.
-    let registry: ChatFeedRegistry
+    /// Общая на чат «память страниц»: где какая стояла и куда её просили встать.
+    let store: ChatFeedStore
     let pageKey: String
     /// «Мы в конце ленты» — по нему показывается кнопка «вниз».
     var onAtBottomChange: (Bool) -> Void = { _ in }
@@ -44,8 +44,7 @@ struct ChatFeedCollection: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ChatFeedHostView {
         let host = ChatFeedHostView()
-        context.coordinator.attach(to: host)
-        registry.register(context.coordinator, for: pageKey)
+        context.coordinator.attach(to: host, store: store, pageKey: pageKey)
         return host
     }
 
@@ -55,13 +54,11 @@ struct ChatFeedCollection: UIViewRepresentable {
         coordinator.onAtBottomChange = onAtBottomChange
         coordinator.onUserScroll = onUserScroll
         coordinator.onTap = onTap
-        registry.register(coordinator, for: pageKey)
         coordinator.apply(rows: rows, revision: revision)
     }
 
     /// Лента занимает всё предложенное место — как и прежняя прокрутка. Без
-    /// этого размер брался бы у `UIView`, у которого его нет, и в стопке с
-    /// шапкой и строкой ввода лента могла бы схлопнуться.
+    /// этого размер брался бы у `UIView`, у которого его нет.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ChatFeedHostView,
                       context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
@@ -79,9 +76,8 @@ struct ChatFeedCollection: UIViewRepresentable {
 /// Строка ленты со всем, что влияет на её вид.
 ///
 /// Ячейка ничего не подписана слушать: в SwiftUI-ленте строки пересобирались на
-/// каждое изменение модели (включая набор текста в поле ввода), и это было
-/// заметно. Здесь строка — значение, и ячейка перерисовывается ровно тогда,
-/// когда это значение изменилось.
+/// каждое изменение модели (включая набор текста в поле ввода). Здесь строка —
+/// значение, и ячейка перерисовывается ровно тогда, когда оно изменилось.
 struct ChatFeedRow: Identifiable, Equatable {
     let id: String
     let item: ChatFeedItem
@@ -120,8 +116,8 @@ struct PressPop<Content: View>: View {
     }
 
     private func press() {
-        scale = 0.9
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.12)) { scale = 1 }
+        withAnimation(.easeOut(duration: 0.08)) { scale = 0.92 }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.1)) { scale = 1 }
     }
 }
 
@@ -132,35 +128,113 @@ final class PressPopTrigger {
     var fire: () -> Void = {}
 }
 
-// MARK: - Доступ из SwiftUI
+// MARK: - Память страниц
 
 enum ChatFeedPosition {
     case bottom, top, center
 }
 
-/// Куда чат складывает ленты страниц (у пейджера тем их несколько) и через что
-/// потом просит прокрутку. Ссылки слабые: страница живёт, пока живёт её вью.
-final class ChatFeedRegistry {
+/// Где страница стояла: строка сверху экрана и на сколько она приподнята над
+/// верхней кромкой. По смещению в точках восстанавливать нельзя — высоты ячеек
+/// после пересборки уточняются, и то же смещение показывает уже другое место.
+struct ChatFeedAnchor: Equatable {
+    /// Пусто — стояли в конце ленты.
+    let id: String?
+    let delta: CGFloat
+}
+
+/// Просьба к ленте встать в определённое место.
+struct ChatFeedRequest: Equatable {
+    let id: String?
+    let position: ChatFeedPosition
+    let animated: Bool
+}
+
+/// Общая на чат память страниц: живая лента страницы, её последняя позиция и
+/// невыполненная просьба прокрутиться.
+///
+/// Зачем: пейджер тем — это `UIPageViewController` внутри `TabView`, и он сносит
+/// страницы, до которых далеко свайпнули. Возвращаясь, страница строится заново,
+/// вместе с ней заново создаётся лента — и без этой памяти она открывалась бы в
+/// конце, теряя место, где человек читал. По той же причине просьбу «встать на
+/// сообщении» нельзя отдавать напрямую: страницы в этот момент может не быть.
+final class ChatFeedStore {
     private var pages: [String: WeakBox] = [:]
+    private var anchors: [String: ChatFeedAnchor] = [:]
+    private var requests: [String: ChatFeedRequest] = [:]
 
     private struct WeakBox {
         weak var coordinator: ChatFeedCollection.Coordinator?
     }
 
-    func register(_ coordinator: ChatFeedCollection.Coordinator, for key: String) {
+    // MARK: Страницы
+
+    @MainActor func register(_ coordinator: ChatFeedCollection.Coordinator, for key: String) {
         pages[key] = WeakBox(coordinator: coordinator)
     }
 
-    subscript(key: String) -> ChatFeedCollection.Coordinator? {
+    @MainActor func unregister(_ key: String, if coordinator: ChatFeedCollection.Coordinator) {
+        if pages[key]?.coordinator === coordinator { pages[key] = nil }
+    }
+
+    @MainActor private func page(_ key: String) -> ChatFeedCollection.Coordinator? {
         pages[key]?.coordinator
+    }
+
+    // MARK: Просьбы
+
+    /// Прокрутить ленту страницы. Если страницы ещё нет или нужной строки в ней
+    /// пока нет — просьба ждёт: её заберёт лента, как только сможет выполнить.
+    @MainActor func scroll(to id: String, page key: String,
+                position: ChatFeedPosition, animated: Bool) {
+        send(ChatFeedRequest(id: id, position: position, animated: animated), to: key)
+    }
+
+    @MainActor func scrollToBottom(page key: String, animated: Bool) {
+        send(ChatFeedRequest(id: nil, position: .bottom, animated: animated), to: key)
+    }
+
+    @MainActor private func send(_ request: ChatFeedRequest, to key: String) {
+        if let page = page(key), page.perform(request) { return }
+        requests[key] = request
+    }
+
+    func queue(_ request: ChatFeedRequest, for key: String) {
+        requests[key] = request
+    }
+
+    func takeRequest(for key: String) -> ChatFeedRequest? {
+        defer { requests[key] = nil }
+        return requests[key]
+    }
+
+    func dropRequest(for key: String) {
+        requests[key] = nil
+    }
+
+    // MARK: Позиция
+
+    func save(_ anchor: ChatFeedAnchor, for key: String) {
+        anchors[key] = anchor
+    }
+
+    func anchor(for key: String) -> ChatFeedAnchor? {
+        anchors[key]
+    }
+
+    // MARK: Кадр сообщения
+
+    /// Где строка лежит на экране (координаты окна) — по ней чат раскладывает
+    /// всплывающее меню рядом с сообщением.
+    @MainActor func windowFrame(forItem id: String, page key: String) -> CGRect? {
+        page(key)?.windowFrame(forItem: id)
     }
 }
 
 // MARK: - Хост
 
 /// Вью-обёртка: держит коллекцию и сообщает, что её размеры пересчитали.
-/// Клавиатура, поворот, появление полосы закрепа — всё приходит сюда, и если
-/// лента стояла в конце, она там и остаётся.
+/// Клавиатура, поворот, появление полосы закрепа — всё приходит сюда.
 final class ChatFeedHostView: UIView {
     var onLayout: () -> Void = {}
 
@@ -171,41 +245,68 @@ final class ChatFeedHostView: UIView {
     }
 }
 
+/// Коллекция, которая сообщает о каждой своей раскладке. По этому событию
+/// проверяется, доехала ли прокрутка до цели: высоты ячеек уточняются уже после
+/// первой укладки, и это единственный честный момент для поправки — вместо
+/// прежней очереди таймеров.
+final class ChatFeedListView: UICollectionView {
+    var onLayout: () -> Void = {}
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout()
+    }
+}
+
 // MARK: - Координатор
 
 extension ChatFeedCollection {
 
     @MainActor
     final class Coordinator: NSObject, UICollectionViewDelegate, UIGestureRecognizerDelegate {
-        private var collection: UICollectionView?
+        private var collection: ChatFeedListView?
         private var dataSource: UICollectionViewDiffableDataSource<Int, String>?
         private var order: [String] = []
         private var rowsById: [String: ChatFeedRow] = [:]
         private var revision = 0
+        private var store: ChatFeedStore?
+        private var pageKey = ""
 
         var content: (ChatFeedRow) -> AnyView = { _ in AnyView(EmptyView()) }
         var onAtBottomChange: (Bool) -> Void = { _ in }
         var onUserScroll: () -> Void = {}
         var onTap: () -> Void = {}
 
-        /// Лента стоит в конце — значит, растёт вниз вместе с новыми строками.
+        /// Лента у конца (с запасом в экранный палец) — по этому показывается
+        /// кнопка «вниз» и по нему же запоминается позиция страницы.
         private var pinnedToBottom = true
+        /// Лента РОВНО в конце: только тогда она следует за растущим
+        /// содержимым. С запасом нельзя — человека, стоящего в двух десятках
+        /// точек от конца, дотягивало бы вниз при каждой подгрузке картинки.
+        private var stickToBottom = true
         private var reportedAtBottom = true
-        /// Прокрутка, которую попросили до того, как строки доехали.
-        private var pending: (id: String?, position: ChatFeedPosition)?
-        /// Что доводить после анимированной прокрутки: штатный метод целится по
-        /// прикидке, и на пару точек промахивается. Доводим один раз и молча.
-        private var correction: (id: String?, position: ChatFeedPosition)?
+        /// Первую позицию (запомненную или конец ленты) ставим один раз.
+        private var didPlaceInitially = false
+        /// Цель, до которой прокрутка ещё не подтверждена. Проверяется по факту
+        /// раскладки и сама себя прекращает: либо доехали, либо кончились попытки.
+        private var awaiting: (request: ChatFeedRequest, checks: Int)?
 
         // MARK: Сборка
 
-        func attach(to host: ChatFeedHostView) {
-            let view = UICollectionView(frame: host.bounds, collectionViewLayout: Self.makeLayout())
+        func attach(to host: ChatFeedHostView, store: ChatFeedStore, pageKey: String) {
+            self.store = store
+            self.pageKey = pageKey
+
+            let view = ChatFeedListView(frame: host.bounds, collectionViewLayout: Self.makeLayout())
             view.backgroundColor = .clear
             view.allowsSelection = false
             view.alwaysBounceVertical = true
             // Клавиатура убирается тем же движением, что и в прежней ленте.
             view.keyboardDismissMode = .interactive
+            // Прокрутка НЕ придерживает касания: иначе она сперва полторы десятых
+            // секунды решает, не жест ли это, и только потом отдаёт нажатие
+            // содержимому — удержание пузыря отзывалось с заметным опозданием.
+            view.delaysContentTouches = false
             // Отступы держим сами: автоматический учёт безопасной области здесь
             // лишний — лента и так стоит между шапкой и строкой ввода.
             view.contentInsetAdjustmentBehavior = .never
@@ -215,6 +316,7 @@ extension ChatFeedCollection {
             // хостинги заранее и меняет высоты за кадром.
             view.isPrefetchingEnabled = false
             view.delegate = self
+            view.onLayout = { [weak self] in self?.listDidLayout() }
 
             let registration = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self] cell, _, id in
                 guard let self, let row = self.rowsById[id] else { return }
@@ -243,9 +345,12 @@ extension ChatFeedCollection {
 
             collection = view
             dataSource = source
+            store.register(self, for: pageKey)
         }
 
         func detach() {
+            saveAnchor()
+            store?.unregister(pageKey, if: self)
             collection = nil
             dataSource = nil
         }
@@ -277,7 +382,11 @@ extension ChatFeedCollection {
 
             rowsById = map
             revision = newRevision
-            guard orderChanged || !changed.isEmpty else { return }
+            guard orderChanged || !changed.isEmpty else {
+                // Строки те же — может, ждёт невыполненная просьба.
+                runPendingRequest()
+                return
+            }
             order = newOrder
 
             var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
@@ -287,56 +396,71 @@ extension ChatFeedCollection {
                 snapshot.reconfigureItems(changed.filter { map[$0] != nil })
             }
 
-            let shouldStick = pinnedToBottom
+            let shouldStick = stickToBottom
             dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
                 guard let self else { return }
-                if let pending = self.pending {
-                    self.pending = nil
-                    self.perform(id: pending.id, position: pending.position, animated: false)
+                if self.runPendingRequest() { return }
+                if !self.didPlaceInitially {
+                    self.placeInitially()
                 } else if shouldStick {
                     // Лента стояла в конце — там и остаётся. Если человек читал
-                    // середину, offset не трогаем вовсе: новые строки дописаны
+                    // середину, смещение не трогаем вовсе: новые строки дописаны
                     // ниже и на его место не влияют.
-                    self.scrollToBottom(animated: false)
+                    _ = self.perform(ChatFeedRequest(id: nil, position: .bottom, animated: false))
                 }
             }
+        }
+
+        /// Первая установка страницы: где стояли в прошлый раз, иначе — конец.
+        private func placeInitially() {
+            didPlaceInitially = true
+            guard let anchor = store?.anchor(for: pageKey), let id = anchor.id,
+                  indexPath(for: id) != nil else {
+                _ = perform(ChatFeedRequest(id: nil, position: .bottom, animated: false))
+                return
+            }
+            restore(anchor)
+        }
+
+        @discardableResult
+        private func runPendingRequest() -> Bool {
+            guard let request = store?.takeRequest(for: pageKey) else { return false }
+            if perform(request) {
+                didPlaceInitially = true
+                return true
+            }
+            // Строка ещё не доехала — просьба ждёт дальше.
+            store?.queue(request, for: pageKey)
+            return false
         }
 
         // MARK: Прокрутка
 
-        func scrollToBottom(animated: Bool) {
-            perform(id: nil, position: .bottom, animated: animated)
-        }
-
-        func scroll(to id: String, position: ChatFeedPosition, animated: Bool) {
-            perform(id: id, position: position, animated: animated)
-        }
-
-        private func perform(id: String?, position: ChatFeedPosition, animated: Bool) {
-            guard let collection else { return }
-            if let id, indexPath(for: id) == nil {
-                // Строка ещё не доехала — прокрутим, как только придёт.
-                pending = (id, position)
-                return
-            }
+        /// Выполнить просьбу. `false` — строки пока нет, просьба должна подождать.
+        @discardableResult
+        func perform(_ request: ChatFeedRequest) -> Bool {
+            guard let collection else { return false }
+            if let id = request.id, indexPath(for: id) == nil { return false }
             collection.layoutIfNeeded()
 
-            if animated {
-                correction = (id, position)
-                if let id, let ip = indexPath(for: id) {
-                    collection.scrollToItem(at: ip, at: uiPosition(position), animated: true)
+            if request.animated {
+                awaiting = (request, 4)
+                if let id = request.id, let ip = indexPath(for: id) {
+                    collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: true)
                 } else {
                     collection.setContentOffset(CGPoint(x: 0, y: bottomOffset()), animated: true)
                 }
-                return
+                return true
             }
 
-            if let id, let ip = indexPath(for: id) {
+            if let id = request.id, let ip = indexPath(for: id) {
                 // Первый проход штатным методом: он по дороге укладывает ячейки,
                 // и после него атрибуты цели уже настоящие.
-                collection.scrollToItem(at: ip, at: uiPosition(position), animated: false)
+                collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: false)
                 collection.layoutIfNeeded()
-                applyExactOffset(for: ip, position: position)
+                applyExactOffset(for: ip, position: request.position)
+                // Дальше высоты ещё могут уточниться — проверим по раскладке.
+                awaiting = (request, 4)
             } else {
                 collection.setContentOffset(CGPoint(x: 0, y: bottomOffset()), animated: false)
                 collection.layoutIfNeeded()
@@ -346,12 +470,28 @@ extension ChatFeedCollection {
                 }
             }
             updateAtBottom()
+            return true
+        }
+
+        /// Вернуть страницу туда, где её оставили.
+        private func restore(_ anchor: ChatFeedAnchor) {
+            guard let collection, let id = anchor.id, let ip = indexPath(for: id) else { return }
+            collection.layoutIfNeeded()
+            collection.scrollToItem(at: ip, at: .top, animated: false)
+            collection.layoutIfNeeded()
+            guard let attrs = collection.layoutAttributesForItem(at: ip) else { return }
+            let target = clamp(attrs.frame.minY - anchor.delta)
+            if abs(collection.contentOffset.y - target) > 0.5 {
+                collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
+            }
+            updateAtBottom()
         }
 
         /// Точное смещение по реальным атрибутам уложенной ячейки.
-        private func applyExactOffset(for ip: IndexPath, position: ChatFeedPosition) {
+        @discardableResult
+        private func applyExactOffset(for ip: IndexPath, position: ChatFeedPosition) -> Bool {
             guard let collection,
-                  let attrs = collection.layoutAttributesForItem(at: ip) else { return }
+                  let attrs = collection.layoutAttributesForItem(at: ip) else { return false }
             let height = collection.bounds.height
             let inset = collection.adjustedContentInset
             let raw: CGFloat
@@ -361,9 +501,9 @@ extension ChatFeedCollection {
             case .bottom: raw = attrs.frame.maxY - height + inset.bottom
             }
             let target = clamp(raw)
-            if abs(collection.contentOffset.y - target) > 0.5 {
-                collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
-            }
+            guard abs(collection.contentOffset.y - target) > 1 else { return true }
+            collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
+            return false
         }
 
         private func bottomOffset() -> CGFloat {
@@ -395,9 +535,8 @@ extension ChatFeedCollection {
 
         // MARK: Кадр сообщения — для всплывающего меню
 
-        /// Где строка лежит на экране (координаты окна). По ней чат раскладывает
-        /// меню рядом с сообщением. Поля ячейки вычитаем: прежняя SwiftUI-лента
-        /// мерила пузырь без отступов списка, и меню считает так же.
+        /// Поля ячейки вычитаем: прежняя лента мерила пузырь без отступов списка,
+        /// и меню раскладывается по такому же кадру.
         func windowFrame(forItem id: String) -> CGRect? {
             guard let collection, let window = collection.window,
                   let ip = indexPath(for: id),
@@ -407,14 +546,55 @@ extension ChatFeedCollection {
                                 dy: ChatFeedCollection.verticalMargin)
         }
 
-        // MARK: Прокрутка руками
+        // MARK: Раскладка и прокрутка руками
+
+        /// Раскладка коллекции: единственный честный момент, чтобы проверить,
+        /// доехала ли прокрутка, и удержать ленту в конце, когда она там стоит.
+        private func listDidLayout() {
+            guard let collection else { return }
+            if let (request, checks) = awaiting {
+                if collection.isDragging || collection.isDecelerating || checks <= 0 {
+                    awaiting = nil
+                } else if let id = request.id, let ip = indexPath(for: id) {
+                    let landed = applyExactOffset(for: ip, position: request.position)
+                    awaiting = landed ? nil : (request, checks - 1)
+                } else {
+                    awaiting = nil
+                }
+                return
+            }
+            // Лента растёт (докрутились картинки, приехали строки), а человек
+            // стоит в конце — держим конец. Под рукой не трогаем.
+            guard stickToBottom, !collection.isDragging, !collection.isDecelerating else { return }
+            let target = bottomOffset()
+            if abs(collection.contentOffset.y - target) > 0.5 {
+                collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
+            }
+        }
 
         private func hostDidLayout() {
-            guard let collection else { return }
             // Размер ленты изменился (клавиатура, поворот, полоса закрепа).
-            // Стояли в конце — там и остаёмся; под рукой человека не трогаем.
-            guard pinnedToBottom, !collection.isDragging, !collection.isDecelerating else { return }
-            scrollToBottom(animated: false)
+            // Дальше всё сделает раскладка самой коллекции.
+            collection?.setNeedsLayout()
+        }
+
+        /// Запомнить, где страница стоит: строка сверху экрана и на сколько она
+        /// приподнята над кромкой.
+        private func saveAnchor() {
+            guard let collection, let store,
+                  collection.bounds.height > 1, collection.contentSize.height > 1 else { return }
+            if pinnedToBottom {
+                store.save(ChatFeedAnchor(id: nil, delta: 0), for: pageKey)
+                return
+            }
+            let top = collection.contentOffset.y + collection.adjustedContentInset.top
+            guard let ip = collection.indexPathsForVisibleItems.sorted().first(where: {
+                (collection.layoutAttributesForItem(at: $0)?.frame.maxY ?? 0) > top
+            }), let attrs = collection.layoutAttributesForItem(at: ip),
+                  ip.item < order.count else { return }
+            store.save(ChatFeedAnchor(id: order[ip.item],
+                                      delta: attrs.frame.minY - collection.contentOffset.y),
+                       for: pageKey)
         }
 
         private func updateAtBottom() {
@@ -426,6 +606,7 @@ extension ChatFeedCollection {
                 + collection.adjustedContentInset.bottom <= collection.bounds.height
             let atBottom = fits || collection.contentOffset.y >= maxOffset - 24
             pinnedToBottom = atBottom
+            stickToBottom = fits || collection.contentOffset.y >= maxOffset - 2
             guard atBottom != reportedAtBottom else { return }
             reportedAtBottom = atBottom
             // Через цикл: считается это в том числе во время раскладки, а менять
@@ -435,21 +616,22 @@ extension ChatFeedCollection {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             updateAtBottom()
+            saveAnchor()
         }
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-            correction = nil
-            pending = nil
+            awaiting = nil
+            store?.dropRequest(for: pageKey)
             onUserScroll()
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-            guard let correction else { return }
-            self.correction = nil
+            guard let (request, _) = awaiting else { return }
+            awaiting = nil
             // Доводка после анимации: без анимации и на считаные точки — её не
             // видно. Это единственный повтор во всей ленте.
-            if let id = correction.id, let ip = indexPath(for: id) {
-                applyExactOffset(for: ip, position: correction.position)
+            if let id = request.id, let ip = indexPath(for: id) {
+                applyExactOffset(for: ip, position: request.position)
             } else if let collection {
                 let target = bottomOffset()
                 if abs(collection.contentOffset.y - target) > 0.5 {
@@ -464,7 +646,7 @@ extension ChatFeedCollection {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             true
         }
     }
