@@ -443,34 +443,59 @@ extension ChatFeedCollection {
             if let id = request.id, indexPath(for: id) == nil { return false }
             collection.layoutIfNeeded()
 
-            if request.animated {
-                awaiting = (request, 4)
-                if let id = request.id, let ip = indexPath(for: id) {
-                    collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: true)
+            guard let id = request.id, let ip = indexPath(for: id) else {
+                // Конец ленты. Анимируем, только если он близко: издалека
+                // анимировать нечего — цель по дороге уезжает (см. settleAtBottom).
+                let far = bottomOffset() - collection.contentOffset.y > collection.bounds.height * 3
+                if request.animated && !far, let last = lastIndexPath {
+                    awaiting = (request, 6)
+                    collection.scrollToItem(at: last, at: .bottom, animated: true)
                 } else {
-                    collection.setContentOffset(CGPoint(x: 0, y: bottomOffset()), animated: true)
+                    settleAtBottom()
                 }
+                updateAtBottom()
                 return true
             }
 
-            if let id = request.id, let ip = indexPath(for: id) {
-                // Первый проход штатным методом: он по дороге укладывает ячейки,
-                // и после него атрибуты цели уже настоящие.
-                collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: false)
-                collection.layoutIfNeeded()
-                applyExactOffset(for: ip, position: request.position)
-                // Дальше высоты ещё могут уточниться — проверим по раскладке.
-                awaiting = (request, 4)
-            } else {
-                collection.setContentOffset(CGPoint(x: 0, y: bottomOffset()), animated: false)
-                collection.layoutIfNeeded()
-                let corrected = bottomOffset()
-                if abs(collection.contentOffset.y - corrected) > 0.5 {
-                    collection.setContentOffset(CGPoint(x: 0, y: corrected), animated: false)
-                }
+            if request.animated {
+                awaiting = (request, 6)
+                collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: true)
+                return true
             }
+            // Первый проход штатным методом: он по дороге укладывает ячейки,
+            // и после него атрибуты цели уже настоящие.
+            collection.scrollToItem(at: ip, at: uiPosition(request.position), animated: false)
+            collection.layoutIfNeeded()
+            applyExactOffset(for: ip, position: request.position)
+            // Дальше высоты ещё могут уточниться — проверим по раскладке.
+            awaiting = (request, 6)
             updateAtBottom()
             return true
+        }
+
+        /// Встать в самый конец ленты.
+        ///
+        /// Одного расчёта мало. Высота ячеек, которых ещё не показывали, — это
+        /// прикидка списка (десятки точек против настоящих сотен), и посчитанный
+        /// по ней конец лежит гораздо выше настоящего. Ровно это и было видно:
+        /// от верха переписки кнопка «вниз» перекидывала на несколько сообщений.
+        /// Поэтому становимся на последнюю строку, даём коллекции уложить то, что
+        /// оказалось на экране, и повторяем, пока смещение не перестанет меняться.
+        /// Сходится за два-три круга и происходит в одном кадре — этого не видно.
+        private func settleAtBottom() {
+            guard let collection, let last = lastIndexPath else { return }
+            for _ in 0..<5 {
+                collection.scrollToItem(at: last, at: .bottom, animated: false)
+                collection.layoutIfNeeded()
+                let target = bottomOffset()
+                if abs(collection.contentOffset.y - target) < 0.5 { return }
+                collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
+                collection.layoutIfNeeded()
+            }
+        }
+
+        private var lastIndexPath: IndexPath? {
+            order.isEmpty ? nil : IndexPath(item: order.count - 1, section: 0)
         }
 
         /// Вернуть страницу туда, где её оставили.
@@ -562,7 +587,15 @@ extension ChatFeedCollection {
                     let landed = applyExactOffset(for: ip, position: request.position)
                     awaiting = landed ? nil : (request, checks - 1)
                 } else {
-                    awaiting = nil
+                    // Конец ленты: пока ехали, нижние ячейки измерились и он
+                    // отодвинулся. Догоняем, пока не перестанет отодвигаться.
+                    let target = bottomOffset()
+                    if abs(collection.contentOffset.y - target) < 0.5 {
+                        awaiting = nil
+                    } else {
+                        collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
+                        awaiting = (request, checks - 1)
+                    }
                 }
                 return
             }
@@ -639,11 +672,8 @@ extension ChatFeedCollection {
             // видно. Это единственный повтор во всей ленте.
             if let id = request.id, let ip = indexPath(for: id) {
                 applyExactOffset(for: ip, position: request.position)
-            } else if let collection {
-                let target = bottomOffset()
-                if abs(collection.contentOffset.y - target) > 0.5 {
-                    collection.setContentOffset(CGPoint(x: 0, y: target), animated: false)
-                }
+            } else {
+                settleAtBottom()
             }
             updateAtBottom()
         }
