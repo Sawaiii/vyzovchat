@@ -172,15 +172,22 @@ struct ChatView: View {
                 }
                 .overlay(alignment: .top) { pinBar }
 
-                if !model.mentionSuggestions.isEmpty { mentionBar }
-                if let editing = model.editingMessage { editBar(editing) }
-                else if let reply = model.replyingTo { replyBar(reply) }
-                // Строка ввода — отдельная вью: состояние записи меняется
-                // несколько раз за секунду жеста, и держи мы его здесь, каждое
-                // изменение перерисовывало бы шапку, темы и все ленты разом.
-                ChatInputBar(model: model,
-                             showPhotoPicker: $showPhotoPicker,
-                             showFileImporter: $showFileImporter)
+                if model.isReadOnly {
+                    // Гость переписку читает, но не пишет: сокет от него принимает
+                    // только вход в комнату. Пустая строка ввода без объяснения
+                    // выглядела бы поломкой.
+                    guestNote
+                } else {
+                    if !model.mentionSuggestions.isEmpty { mentionBar }
+                    if let editing = model.editingMessage { editBar(editing) }
+                    else if let reply = model.replyingTo { replyBar(reply) }
+                    // Строка ввода — отдельная вью: состояние записи меняется
+                    // несколько раз за секунду жеста, и держи мы его здесь, каждое
+                    // изменение перерисовывало бы шапку, темы и все ленты разом.
+                    ChatInputBar(model: model,
+                                 showPhotoPicker: $showPhotoPicker,
+                                 showFileImporter: $showFileImporter)
+                }
             }
             // Размытия чата здесь больше нет. `.blur` — фильтр слоя, и он
             // работает всегда, а не только когда радиус больше нуля: весь чат
@@ -289,7 +296,8 @@ struct ChatView: View {
                                kind: kind,
                                canCheck: model.canCheck(kind),
                                canEdit: model.canEditEquipment,
-                               canClaim: model.canClaims) {
+                               canClaim: model.canClaims,
+                               myWarehouses: session.currentUser?.warehouseIds ?? []) {
                 Task { await model.loadStages() }
             }
         }
@@ -303,7 +311,8 @@ struct ChatView: View {
                           canReview: model.canReview,
                           claimTopicId: model.claimTopicId,
                           address: model.chat.address,
-                          crmURL: model.chat.crmURL)
+                          crmURL: model.chat.crmURL,
+                          actURL: model.chat.actURL)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showShifts) {
@@ -1171,6 +1180,16 @@ struct ChatView: View {
     /// личной переписки. Нажатие ведёт к сообщению (даже если оно давно уехало
     /// из ленты) и переходит к следующему закрепу.
     @ViewBuilder
+    /// Подпись вместо строки ввода у гостя.
+    private var guestNote: some View {
+        Text("Гостевой доступ: только просмотр.")
+            .font(Typography.caption)
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.s)
+            .background(Theme.panel)
+    }
+
     private var pinBar: some View {
         if let pinned = model.pinned {
             HStack(spacing: Spacing.s) {

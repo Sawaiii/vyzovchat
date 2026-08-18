@@ -48,19 +48,27 @@ final class ChatViewModel: ObservableObject {
     /// набору кнопки: держать свою копию правил значит однажды разойтись с ним.
     @Published var rights: MeRightsDTO?
 
+    /// Гость: смотрит чат целиком, но не пишет и ничего не отмечает. Сервер
+    /// считает его админом ЛЮБОГО чата — иначе половина окон не открылась бы, —
+    /// поэтому `me_rights` придут полными, и гасить их приходится здесь.
+    /// Запрет держит сам сервер (403 `guest_readonly` и фильтр в сокете); мы
+    /// просто не показываем кнопки, которые всё равно откажут.
+    var isReadOnly: Bool { AppSession.isGuest }
+
     var myEventRole: EventRole { EventRole(rights?.role) }
-    var canDocs: Bool { rights?.docs ?? isChatAdmin }
-    var canClaims: Bool { rights?.claims ?? isChatAdmin }
+    var canDocs: Bool { !isReadOnly && (rights?.docs ?? isChatAdmin) }
+    var canClaims: Bool { !isReadOnly && (rights?.claims ?? isChatAdmin) }
     /// Отбор фото; «Отчёт» и «Фотобанк» отдельно — они только у админа чата.
-    var canPickPhotos: Bool { rights?.otbor ?? isChatAdmin }
-    var canPickForReport: Bool { rights?.otbor_all ?? isChatAdmin }
-    var canCheckin: Bool { rights?.checkin ?? true }
-    var canEditEquipment: Bool { rights?.equip_edit ?? isChatAdmin }
+    var canPickPhotos: Bool { !isReadOnly && (rights?.otbor ?? isChatAdmin) }
+    var canPickForReport: Bool { !isReadOnly && (rights?.otbor_all ?? isChatAdmin) }
+    var canCheckin: Bool { !isReadOnly && (rights?.checkin ?? true) }
+    var canEditEquipment: Bool { !isReadOnly && (rights?.equip_edit ?? isChatAdmin) }
 
     /// Можно ли ставить галочки в конкретном чеклисте. Свою половину отмечает
     /// только своя сторона: в этом весь смысл двойного чеклиста загрузки —
     /// подпись стоит и у склада, и у реализации.
     func canCheck(_ kind: EquipCheckKind) -> Bool {
+        if isReadOnly { return false }
         switch kind {
         case .loaded, .returned:    return rights?.equip_check ?? false
         case .loadedImpl:           return rights?.equip_check_impl ?? isChatAdmin
@@ -69,17 +77,17 @@ final class ChatViewModel: ObservableObject {
     }
 
     /// Опрос клиента: выдать ссылку и посмотреть отзывы.
-    var canReview: Bool { rights?.review ?? isChatAdmin }
-    var canAssignRoles: Bool { rights?.assign ?? false }
+    var canReview: Bool { !isReadOnly && (rights?.review ?? isChatAdmin) }
+    var canAssignRoles: Bool { !isReadOnly && (rights?.assign ?? false) }
     /// Объявить важное с отметкой «Ознакомлен» — админ чата, старший, наблюдатель.
-    var canAlarm: Bool { rights?.alarm ?? false }
+    var canAlarm: Bool { !isReadOnly && (rights?.alarm ?? false) }
     /// Отмечаться «ознакомлен» — участник и старший.
-    var canAck: Bool { rights?.canAck ?? false }
+    var canAck: Bool { !isReadOnly && (rights?.canAck ?? false) }
     /// Править и отменять смены задним числом — только руководство.
-    var canEditShifts: Bool { rights?.shift_cancel ?? false }
+    var canEditShifts: Bool { !isReadOnly && (rights?.shift_cancel ?? false) }
     /// Этапы, которые закрываю именно я: у админа все, у старшего середина,
     /// у кладовщика погрузка и приёмка.
-    var myStages: Set<String> { Set(rights?.stages ?? []) }
+    var myStages: Set<String> { isReadOnly ? [] : Set(rights?.stages ?? []) }
     /// Кто докуда дочитал в мероприятии: workerId → id последнего прочитанного.
     @Published var groupReads: [String: Int] = [:]
     /// Всего участников мероприятия.
@@ -961,10 +969,13 @@ final class ChatViewModel: ObservableObject {
 
         if let dto = details {
             rights = dto.me_rights
-            isChatAdmin = dto.me_rights?.chat_admin ?? dto.me_is_chat_admin ?? false
+            // Гость админом чата не считается, хотя сервер его таковым и отдаёт:
+            // на этом флаге висят правка мероприятия, состав и удаление чужих
+            // сообщений.
+            isChatAdmin = !isReadOnly && (dto.me_rights?.chat_admin ?? dto.me_is_chat_admin ?? false)
             memberCount = dto.members.count
             members = dto.members.map(User.init(member:))
-            canInvite = dto.me_can_invite ?? false
+            canInvite = !isReadOnly && (dto.me_can_invite ?? false)
             rebuildMentionIndex()
         }
         if let state {

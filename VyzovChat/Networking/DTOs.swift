@@ -51,7 +51,8 @@ struct WorkerDTO: Decodable {
     let phone: String?
     let email: String?
     let position: String?
-    /// Глобальная роль: worker | leader | owner | implementer | curator
+    /// Глобальная роль: worker | manager | contractor | warehouse | curator |
+    /// implementer | guest | leader | owner (названия — в `SystemRole`).
     let role: String?
     let is_admin: Bool?
     let is_leader: Bool?
@@ -68,6 +69,9 @@ struct WorkerDTO: Decodable {
     let archived_at: String?
     /// Привязан ли Яндекс-аккаунт — только в `GET /api/workers/{id}`.
     let yandex_linked: Bool?
+    /// Склады из справочника Tony, за которые человек отвечает (миграция 00075).
+    /// По ним в чеклисте загрузки его склад раскрыт первым.
+    let warehouses: [String]?
 
     /// Может звать подрядчиков по ссылке: галочка в карточке либо глобальная роль.
     var isCurator: Bool { (is_curator ?? false) || role == "curator" }
@@ -203,6 +207,12 @@ struct EventDTO: Decodable {
     let crm_url: String?
     /// Когда в чате писали в последний раз — по нему сортируется список.
     let last_at: String?
+    /// Пустой акт приёма, который собирает Tony по номеру сделки. Открывается
+    /// в браузере и только тем, кто в CRM авторизован, — поэтому это ссылка,
+    /// а не наша выгрузка. У мероприятий без сделки поля нет.
+    let act_url: String?
+    /// Скрытое мероприятие: видно только своему составу. Служебные чаты проверок.
+    let hidden: Bool?
 }
 
 /// `GET /api/events/{id}` — состав, смены и мои права в этом чате.
@@ -346,6 +356,26 @@ struct ProfileExtraDTO: Decodable {
     let skills: [String]?
     /// Могу ли я оценивать и размечать компетенции (руководство и реализаторы).
     let can_rate: Bool?
+    /// Видно ли мне, кто именно оценивал (админ и руководитель). Остальным оценка
+    /// безымянная: это репутация, а не список, кто кому что поставил.
+    let can_see_ratings: Bool?
+}
+
+/// Строка журнала оценок (`GET /api/workers/{id}/ratings`).
+///
+/// Рядом с оценкой — сколько оценок сам оценщик наставил и какая у них средняя:
+/// по одной строке не видно, раздаёт он всем пятёрки или единицы, а «народ
+/// балуется» видно именно по этому.
+struct RaterMarkDTO: Decodable, Identifiable {
+    let rater_id: Int
+    let rater_fio: String?
+    let stars: Int
+    let updated_at: String?
+    let rater_all: Int?
+    let rater_avg: Double?
+
+    var id: Int { rater_id }
+    var who: String { (rater_fio?.isEmpty == false) ? rater_fio! : "учётка удалена" }
 }
 
 struct SetRatingRequest: Encodable { let stars: Int }
@@ -537,6 +567,10 @@ struct EquipmentDTO: Decodable, Identifiable {
     let name: String
     let qty: Int?
     let crm_url: String?
+    /// Склад, с которого едет позиция: кладовщик грузит только свой (сервер,
+    /// миграция 00075). Пусто — склад не прислали, такие видны всем.
+    let warehouse_id: String?
+    let warehouse_name: String?
     // Чеклисты: загрузка (склад и реализация), сверка на приезде и на демонтаже,
     // приёмка — кто и когда отметил.
     let loaded_at: String?
@@ -555,6 +589,14 @@ struct EquipmentDTO: Decodable, Identifiable {
     let claim_status: String?
     /// Чем закончилась, если урегулирована.
     let claim_note: String?
+
+    /// Название склада для группы в чеклисте: без склада позиции сводим в одну кучу.
+    var warehouseKey: String { warehouse_id ?? "" }
+    var warehouseTitle: String {
+        if let name = warehouse_name, !name.isEmpty { return name }
+        if let id = warehouse_id, !id.isEmpty { return "Склад \(id)" }
+        return "Без склада"
+    }
 
     /// Отмечена ли позиция в чеклисте нужного вида.
     func isChecked(_ kind: EquipCheckKind) -> Bool {
@@ -653,6 +695,19 @@ enum EquipCheckKind: String, Identifiable {
 struct AddEquipmentRequest: Encodable {
     let name: String
     let qty: Int?
+}
+
+/// Строка состава заказа (`GET /api/events/{id}/equipment/brief`): что вообще едет,
+/// включая услуги, работы и транспорт. Отметок тут нет — их ставят в чеклистах, а
+/// работы и людей туда с 16 августа 2026 сервер не кладёт: отмечать их нечем.
+struct BriefItemDTO: Decodable, Identifiable {
+    /// Как назвал Tony: «Оборудование», «Доп.оборудование», «Услуги», «Транспорт»…
+    let kind: String
+    let name: String
+    let qty: Int?
+
+    /// Своего id у строки нет — состав приходит списком, ключ собираем сами.
+    var id: String { "\(kind)|\(name)|\(qty ?? -1)" }
 }
 
 // MARK: - Документы (акты)
@@ -1177,6 +1232,7 @@ extension User {
         self.companyIds = dto.company_ids ?? []
         self.isArchived = dto.archived_at != nil
         self.lastSeen = DateParse.iso(dto.last_seen)
+        self.warehouseIds = dto.warehouses ?? []
     }
 
     /// Участник мероприятия: ФИО и роль в составе, остальное — из справочника.
@@ -1246,6 +1302,7 @@ extension Chat {
         self.isSystem = event.system ?? false
         self.address = event.address
         self.crmURL = event.crm_url.flatMap { URL(string: $0) }
+        self.actURL = event.act_url.flatMap { URL(string: $0) }
         // Время последнего сообщения сервер теперь отдаёт сам — без него список
         // сортировался по «нет даты» и тасовался при каждом обновлении.
         if lastDate == nil, let at = DateParse.iso(event.last_at) {

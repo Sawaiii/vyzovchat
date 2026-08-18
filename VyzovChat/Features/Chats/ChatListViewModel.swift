@@ -87,7 +87,9 @@ final class ChatListViewModel: ObservableObject {
             list[i].lastMessagePreview = message.previewText
             list[i].lastMessageDate = message.sentAt
             list[i].lastMessageIsMine = isMine
-            if !isMine && !isOpen { list[i].unreadCount += 1 }
+            // Служебные строки в счётчик не идут — так же считает сервер, и
+            // иначе наш бейдж расходился бы с тем, что придёт при обновлении.
+            if !isMine && !isOpen && !message.isSysLine { list[i].unreadCount += 1 }
             list.sort(by: Chat.byActivity)
             return true
         }

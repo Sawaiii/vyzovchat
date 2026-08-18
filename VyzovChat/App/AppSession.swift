@@ -56,6 +56,17 @@ final class AppSession: ObservableObject {
         return nil
     }
 
+    /// Вошли гостем (роль `guest`, с 14 августа 2026): смотреть можно всё, менять
+    /// нельзя ничего. Поле статическое, потому что знать об этом должны и модели,
+    /// которым сессию не передают, — например `ChatViewModel`, гасящий по нему
+    /// права из `me_rights`: гостя сервер считает админом любого чата, иначе
+    /// половина окон ему просто не открылась бы.
+    private(set) static var isGuest = false
+
+    private func rememberRole(_ user: User?) {
+        AppSession.isGuest = user?.isGuest ?? false
+    }
+
     /// Открыть приглашение по ссылке (deep link или вставленная руками ссылка).
     func openInvite(rawLink: String) -> Bool {
         guard let token = InviteLink.token(from: rawLink) else { return false }
@@ -66,14 +77,17 @@ final class AppSession: ObservableObject {
     func bootstrap() async {
         if let user = await auth.restoreSession() {
             authState = .signedIn(user)
+            rememberRole(user)
             connectRealtime()
         } else {
             authState = .signedOut
+            rememberRole(nil)
         }
     }
 
     func handleSignedIn(_ user: User) {
         withAnimation(.smooth) { authState = .signedIn(user) }
+        rememberRole(user)
         connectRealtime()
     }
 
@@ -82,6 +96,7 @@ final class AppSession: ObservableObject {
         AvatarStore.clear()
         await auth.signOut()
         withAnimation(.smooth) { authState = .signedOut }
+        rememberRole(nil)
     }
 
     /// Открыть канал реального времени с сохранённым токеном.

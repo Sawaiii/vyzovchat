@@ -4,7 +4,7 @@ struct MainTabView: View {
     @EnvironmentObject private var session: AppSession
     @ObservedObject private var router = Router.shared
 
-    private var showsDashboard: Bool { session.currentUser?.isAdmin ?? false }
+    private var showsDashboard: Bool { session.currentUser?.canViewAdmin ?? false }
 
     /// `TabView` остаётся ради того, ради чего он и нужен: он держит все вкладки
     /// живыми, и возврат на вкладку не перезагружает её с нуля. А вот полосу он

@@ -8,6 +8,9 @@ import Foundation
 protocol EventInfoServicing {
     // Оборудование
     func equipment(dealId: String) async -> [EquipmentDTO]
+    /// Весь состав заказа: с услугами, работами и транспортом, но без отметок.
+    /// В чеклистах их нет — отмечать там нечего, — а бригаде надо знать, что едет.
+    func equipmentBrief(dealId: String) async -> [BriefItemDTO]
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO
     func deleteEquipment(dealId: String, itemId: Int) async throws
 
@@ -15,12 +18,10 @@ protocol EventInfoServicing {
     func documents(dealId: String) async -> [DocumentDTO]
     func addDocument(dealId: String, _ req: AddDocumentRequest) async throws -> DocumentDTO
     func deleteDocument(dealId: String, docId: Int) async throws
-    /// Отметить документ отправленным в Tony (учётную систему).
-    func sendDocumentToTony(dealId: String, docId: Int) async throws
-    /// Отправить в Tony все документы разом. Возвращает, сколько ушло.
-    func sendAllDocumentsToTony(dealId: String) async throws -> Int
-    /// Сложить файлы документов на общий Диск (папка мероприятия). Возвращает, сколько скопировано.
-    func documentsToDisk(dealId: String) async throws -> Int
+    // Ручных «отправить в Tony» и «сложить на Диск» здесь больше нет: с 15 августа
+    // 2026 документ уходит на Диск сам при добавлении, а в CRM его прокидывает
+    // автоматика. Эндпоинты на сервере остались, но кнопок под них нет — иначе
+    // одно и то же делается двумя способами и расходится.
 
     // Претензии
     func claims(dealId: String) async -> [ClaimDTO]
@@ -28,8 +29,8 @@ protocol EventInfoServicing {
     /// «Урегулирована» — снимает блокировку завершения мероприятия.
     /// Комментарий обязателен: сервер хранит его у претензии и без него отвечает 400.
     func closeClaim(id: Int, note: String) async throws
-    /// Отправить претензию в CRM (Tony) — «ущербы» сделки.
-    func sendClaim(id: Int) async throws
+    // «Отправить в Tony» у претензии тоже убрана: ущерб прокидывается в CRM по
+    // факту фиксации. Статус «отправлена» остался — его ставит сервер.
     func deleteClaim(id: Int) async throws
 
     // Приглашения
@@ -44,6 +45,11 @@ final class RealEventInfoService: EventInfoServicing {
 
     func equipment(dealId: String) async -> [EquipmentDTO] {
         (try? await APIClient.shared.get("/api/events/\(dealId)/equipment", as: [EquipmentDTO].self)) ?? []
+    }
+
+    func equipmentBrief(dealId: String) async -> [BriefItemDTO] {
+        (try? await APIClient.shared.get("/api/events/\(dealId)/equipment/brief",
+                                         as: [BriefItemDTO].self)) ?? []
     }
 
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO {
@@ -70,25 +76,6 @@ final class RealEventInfoService: EventInfoServicing {
         _ = try await APIClient.shared.delete("/api/events/\(dealId)/documents/\(docId)", as: OKDTO.self)
     }
 
-    func sendDocumentToTony(dealId: String, docId: Int) async throws {
-        _ = try await APIClient.shared.post("/api/events/\(dealId)/documents/\(docId)/tony",
-                                            json: EmptyBody(), as: OKDTO.self)
-    }
-
-    func sendAllDocumentsToTony(dealId: String) async throws -> Int {
-        struct CountDTO: Decodable { let count: Int? }
-        let dto = try await APIClient.shared.post("/api/events/\(dealId)/documents/tony",
-                                                  json: EmptyBody(), as: CountDTO.self)
-        return dto.count ?? 0
-    }
-
-    func documentsToDisk(dealId: String) async throws -> Int {
-        struct CountDTO: Decodable { let count: Int? }
-        let dto = try await APIClient.shared.post("/api/events/\(dealId)/documents/disk",
-                                                  json: EmptyBody(), as: CountDTO.self)
-        return dto.count ?? 0
-    }
-
     // MARK: - Претензии
 
     func claims(dealId: String) async -> [ClaimDTO] {
@@ -106,10 +93,6 @@ final class RealEventInfoService: EventInfoServicing {
                                             json: CloseClaimRequest(note: note), as: OKDTO.self)
     }
 
-    func sendClaim(id: Int) async throws {
-        _ = try await APIClient.shared.post("/api/claims/\(id)/send", json: EmptyBody(), as: OKDTO.self)
-    }
-
     func deleteClaim(id: Int) async throws {
         _ = try await APIClient.shared.delete("/api/claims/\(id)", as: OKDTO.self)
     }
@@ -124,8 +107,10 @@ final class RealEventInfoService: EventInfoServicing {
 
 final class MockEventInfoService: EventInfoServicing {
     func equipment(dealId: String) async -> [EquipmentDTO] { [] }
+    func equipmentBrief(dealId: String) async -> [BriefItemDTO] { [] }
     func addEquipment(dealId: String, name: String, qty: Int?) async throws -> EquipmentDTO {
         EquipmentDTO(id: 0, name: name, qty: qty, crm_url: nil,
+                     warehouse_id: nil, warehouse_name: nil,
                      loaded_at: nil, loaded_by: nil, loaded_impl_at: nil, loaded_impl_by: nil,
                      arrived_at: nil, arrived_by: nil, dismantled_at: nil, dismantled_by: nil,
                      returned_at: nil, returned_by: nil,
@@ -138,13 +123,9 @@ final class MockEventInfoService: EventInfoServicing {
                     file_url: nil, download_url: nil, body: req.body, sent_to_tony: false, created_at: nil)
     }
     func deleteDocument(dealId: String, docId: Int) async throws {}
-    func sendDocumentToTony(dealId: String, docId: Int) async throws {}
-    func sendAllDocumentsToTony(dealId: String) async throws -> Int { 0 }
-    func documentsToDisk(dealId: String) async throws -> Int { 0 }
     func claims(dealId: String) async -> [ClaimDTO] { [] }
     func createClaim(dealId: String, items: [CreateClaimRequest.Item]) async throws {}
     func closeClaim(id: Int, note: String) async throws {}
-    func sendClaim(id: Int) async throws {}
     func deleteClaim(id: Int) async throws {}
     func createInvite(dealId: String, role: String) async throws -> InviteDTO {
         InviteDTO(token: "mock", path: "/join/mock", role: role, event_name: nil)

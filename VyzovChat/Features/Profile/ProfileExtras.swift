@@ -13,6 +13,9 @@ struct ProfileExtrasSection: View {
     @State private var extra: ProfileExtraDTO?
     @State private var skills: [String] = []
     @State private var rating: RatingDTO?
+    /// Журнал оценок: пусто — не раскрывали (или оценок нет).
+    @State private var raters: [RaterMarkDTO] = []
+    @State private var ratersBusy = false
     @State private var newSkill = ""
     @State private var suggestions: [String] = []
     @State private var busy = false
@@ -71,8 +74,53 @@ struct ProfileExtrasSection: View {
                     Text("Вашу оценку видит только среднее — кто как поставил, в карточке не показывается.")
                         .font(.caption2).foregroundStyle(Theme.textSecondary)
                 }
+                // Кто именно оценил — только админу и руководителю. Оценивают
+                // живые люди, и кто-то оценкой пользуется не по делу: рядом с
+                // каждой строкой видно, сколько оценок сам оценщик наставил и
+                // какая у них средняя.
+                if canSeeRaters, (rating?.count ?? 0) > 0 {
+                    Button(raters.isEmpty ? "Кто оценивал" : "Скрыть, кто оценивал") {
+                        Task { await toggleRaters() }
+                    }
+                    .font(.caption).foregroundStyle(Theme.accent)
+                    .disabled(ratersBusy)
+
+                    ForEach(raters) { mark in
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: Spacing.xs) {
+                                Text(mark.who).font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.textPrimary).lineLimit(1)
+                                Text(String(repeating: "★", count: max(0, min(5, mark.stars))))
+                                    .font(.caption).foregroundStyle(Theme.warning)
+                                Spacer(minLength: Spacing.xs)
+                                if let when = DateParse.iso(mark.updated_at) {
+                                    Text(when, format: .dateTime.day().month().year())
+                                        .font(.system(size: 10)).foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                            if let all = mark.rater_all, let avg = mark.rater_avg, all > 0 {
+                                Text("поставил(а) оценок: \(all), в среднем "
+                                     + String(format: "%.1f", avg).replacingOccurrences(of: ".", with: ","))
+                                    .font(.system(size: 10)).foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /// Журнал оценок открыт админу и руководителю; остальным оценка безымянная.
+    private var canSeeRaters: Bool { extra?.can_see_ratings ?? false }
+
+    private func toggleRaters() async {
+        if !raters.isEmpty {
+            raters = []
+            return
+        }
+        ratersBusy = true
+        defer { ratersBusy = false }
+        raters = await PeopleExtras.ratingLog(workerId: user.id)
     }
 
     // MARK: - Награды

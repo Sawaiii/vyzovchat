@@ -7,6 +7,8 @@ import SwiftUI
 struct EventDocumentsView: View {
     let dealId: String
     let isChatAdmin: Bool
+    /// Ссылка «собрать пустой акт» из карточки мероприятия (`act_url`).
+    var actURL: URL? = nil
 
     @EnvironmentObject private var session: AppSession
     @Environment(\.dismiss) private var dismiss
@@ -26,10 +28,6 @@ struct EventDocumentsView: View {
     /// Какой вид документа сейчас выбираем файлом.
     @State private var importingFor: String?
 
-    // Действия над всеми документами разом
-    @State private var bulkBusy = false
-    @State private var bulkResult: String?
-
     private func document(of type: String) -> DocumentDTO? {
         documents.first { $0.type == type }
     }
@@ -47,10 +45,10 @@ struct EventDocumentsView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Spacing.m) {
                             if let errorText { ErrorBanner(text: errorText) }
+                            if isChatAdmin, let actURL { makeActCard(actURL) }
                             actCard("Акт приёма", type: "act_accept")
                             actCard("Акт возврата", type: "act_return")
                             othersSection
-                            if isChatAdmin && !documents.isEmpty { bulkActions }
                             if isChatAdmin { addForm }
                         }
                         .padding(.horizontal, metrics.horizontalPadding)
@@ -125,15 +123,13 @@ struct EventDocumentsView: View {
                     Button("Скачать") { openURL(link) }
                         .font(.caption).foregroundStyle(Theme.accent)
                 }
-                // Отметка «ушёл в учётную систему» — её ставит админ чата.
+                // Отметка «ушёл в учётную систему». Кнопки «отправить» больше нет:
+                // с 15 августа 2026 документы уходят в Tony и на Диск сами, а
+                // отметку ставит автоматика — руками её дублировали и путались,
+                // отправлено на самом деле или только помечено.
                 if doc.sent_to_tony == true {
                     Label("в Tony", systemImage: "checkmark.seal.fill")
                         .font(.caption2).foregroundStyle(Theme.success)
-                } else if isChatAdmin {
-                    Button("в Tony") { Task { await sendToTony(doc) } }
-                        .font(.caption2).foregroundStyle(Theme.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .overlay(Capsule().stroke(Theme.textSecondary.opacity(0.4), lineWidth: 1))
                 }
                 Spacer()
                 if isChatAdmin {
@@ -167,28 +163,25 @@ struct EventDocumentsView: View {
         }
     }
 
-    /// Действия сразу над всеми документами — как в вебе: по одному отмечать
-    /// десяток актов и потом ещё раскладывать их по Диску никто не станет.
-    private var bulkActions: some View {
+    /// «Сформировать акт» — пустой акт приёма, который собирает Tony по номеру
+    /// сделки. Стоит первым, а не строкой в списке: с него начинают — печатают и
+    /// подписывают на площадке, — а подписанный возвращается сюда обычной
+    /// загрузкой. Это ссылка, а не наша выгрузка: страница закрыта входом в CRM.
+    /// У мероприятий без сделки (завели руками) кнопки нет.
+    private func makeActCard(_ url: URL) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: Spacing.s) {
-                Text("Все документы").font(Typography.headline).foregroundStyle(Theme.textPrimary)
-                HStack(spacing: Spacing.s) {
-                    Button(bulkBusy ? "Отправляем…" : "Все в Tony") { Task { await allToTony() } }
-                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(Theme.panel2, in: Capsule())
-                    Button(bulkBusy ? "Копируем…" : "Сложить на Диск") { Task { await allToDisk() } }
-                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(Theme.panel2, in: Capsule())
-                    Spacer()
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Сформировать акт", systemImage: "doc.badge.plus")
+                        .font(Typography.callout.weight(.semibold))
+                        .foregroundStyle(Theme.textOnAccent)
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(Theme.accent, in: Capsule())
                 }
-                .disabled(bulkBusy)
-                if let bulkResult {
-                    Text(bulkResult).font(.caption2).foregroundStyle(Theme.success)
-                }
-                Text("На Диск копируются только документы с файлом — папка мероприятия, раздел «Документы».")
+                .buttonStyle(.plain)
+                Text("Пустой акт приёма по сделке — соберёт Tony, откроется в браузере.")
                     .font(.caption2).foregroundStyle(Theme.textSecondary)
             }
         }
@@ -277,43 +270,6 @@ struct EventDocumentsView: View {
             errorText = error.localizedDescription
             Haptics.warning()
         }
-    }
-
-    private func allToTony() async {
-        bulkBusy = true
-        bulkResult = nil
-        defer { bulkBusy = false }
-        do {
-            let count = try await session.eventInfo.sendAllDocumentsToTony(dealId: dealId)
-            bulkResult = count > 0 ? "Отправлено документов: \(count)" : "Всё уже было отправлено."
-            Haptics.success()
-            await load()
-        } catch {
-            errorText = error.localizedDescription
-            Haptics.warning()
-        }
-    }
-
-    private func allToDisk() async {
-        bulkBusy = true
-        bulkResult = nil
-        defer { bulkBusy = false }
-        do {
-            let count = try await session.eventInfo.documentsToDisk(dealId: dealId)
-            bulkResult = count > 0 ? "Скопировано на Диск: \(count)" : "Копировать нечего: у документов нет файлов."
-            Haptics.success()
-        } catch {
-            errorText = error.localizedDescription
-            Haptics.warning()
-        }
-    }
-
-    private func sendToTony(_ doc: DocumentDTO) async {
-        do {
-            try await session.eventInfo.sendDocumentToTony(dealId: dealId, docId: doc.id)
-            Haptics.success()
-            await load()
-        } catch { errorText = error.localizedDescription }
     }
 
     private func remove(_ doc: DocumentDTO) async {

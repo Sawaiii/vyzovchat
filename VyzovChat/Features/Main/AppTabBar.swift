@@ -42,9 +42,10 @@ struct AppTabBar: View {
 
     /// Дашборд серверный и целиком админский — обычному сотруднику его
     /// эндпоинты отвечают «admin_only», поэтому и вкладки ему не даём.
+    /// Гостю даём: сводки ему сервер открыл, он их только смотрит.
     private var tabs: [AppTab] {
         let all: [AppTab] = [.chats, .deals, .dashboard, .disk, .profile]
-        guard session.currentUser?.isAdmin != true else { return all }
+        guard session.currentUser?.canViewAdmin != true else { return all }
         return all.filter { $0 != .dashboard }
     }
 

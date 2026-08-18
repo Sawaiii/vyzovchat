@@ -137,10 +137,9 @@ struct ClaimsView: View {
                                 // поэтому её надо явно урегулировать.
                                 Button("Урегулирована") { closing = claim; closeComment = "" }
                                     .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                                if claim.status != "sent" {
-                                    Button("Отправить в CRM") { Task { await send(claim) } }
-                                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
-                                }
+                                // Кнопки «Отправить в CRM» здесь больше нет (сервер,
+                                // 15 августа 2026): ущерб уходит в Tony по факту
+                                // фиксации, статус «отправлена» ставит автоматика.
                             }
                         }
                     }
@@ -261,18 +260,6 @@ struct ClaimsView: View {
         closeComment = ""
         do {
             try await session.eventInfo.closeClaim(id: claim.id, note: comment)
-            Haptics.success()
-            await load()
-        } catch {
-            errorText = error.localizedDescription
-            Haptics.warning()
-        }
-    }
-
-    /// Отправить претензию в учётную систему — «ущербы» сделки.
-    private func send(_ claim: ClaimDTO) async {
-        do {
-            try await session.eventInfo.sendClaim(id: claim.id)
             Haptics.success()
             await load()
         } catch {

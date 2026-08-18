@@ -20,6 +20,8 @@ struct EventInfoView: View {
     /// Площадка и ссылка на сделку — приходят из CRM вместе с мероприятием.
     var address: String?
     var crmURL: URL?
+    /// «Собрать пустой акт приёма» — ссылка на Tony по номеру сделки (`act_url`).
+    var actURL: URL?
     /// Фото с мероприятия запрещено использовать (галочка ниже).
     @State var photosRestricted: Bool = false
 
@@ -29,6 +31,9 @@ struct EventInfoView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var equipment: [EquipmentDTO] = []
+    /// Весь состав заказа — с услугами и транспортом, которых в чеклистах нет.
+    @State private var brief: [BriefItemDTO] = []
+    @State private var briefOpen = false
     @State private var isLoading = true
     @State private var errorText: String?
 
@@ -62,6 +67,7 @@ struct EventInfoView: View {
                             restrictedCard
                             sectionsCard
                             if canInvite { inviteCard }
+                            briefSection
                             equipmentSection
                         }
                         .padding(.horizontal, metrics.horizontalPadding)
@@ -76,7 +82,8 @@ struct EventInfoView: View {
             .refreshable { await load() }
             .sheet(isPresented: $showDocuments) {
                 // Правит не только админ чата: акты ведёт и старший.
-                EventDocumentsView(dealId: dealId, isChatAdmin: isChatAdmin || canDocs)
+                EventDocumentsView(dealId: dealId, isChatAdmin: isChatAdmin || canDocs,
+                                   actURL: actURL)
                     .environmentObject(session)
             }
             .sheet(isPresented: $showClaims) {
@@ -282,6 +289,76 @@ struct EventInfoView: View {
 
     // MARK: - Оборудование
 
+    /// Состав заказа целиком: оборудование, услуги, работы, транспорт.
+    ///
+    /// Это справка, а не чеклист: с 16 августа 2026 сервер не кладёт услуги и людей
+    /// в чеклисты — отмечать их нечем, — но бригаде надо знать, что вообще едет.
+    /// Свёрнут по умолчанию: в большом заказе строк несколько десятков, а ниже
+    /// лежит то, что правят.
+    @ViewBuilder
+    private var briefSection: some View {
+        if !brief.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Button {
+                    withAnimation(.smooth(duration: 0.2)) { briefOpen.toggle() }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Text("Состав заказа").font(Typography.headline)
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("\(brief.count)").font(.caption2)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Theme.panel2, in: Capsule())
+                        Spacer()
+                        Image(systemName: briefOpen ? "chevron.up" : "chevron.down")
+                            .font(.caption).foregroundStyle(Theme.textSecondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if briefOpen {
+                    // Группы идут в порядке сервера: сперва то, что физически едет,
+                    // потом работы, люди и транспорт — как в карточке сделки.
+                    ForEach(briefGroups) { group in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.kind.uppercased())
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                            ForEach(group.items) { item in
+                                Text(item.qty.map { "\(item.name) · \($0) шт" } ?? item.name)
+                                    .font(Typography.callout)
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.s)
+                        .glass(cornerRadius: Theme.cornerSmall, elevated: false)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Группа состава заказа: «Оборудование», «Услуги», «Транспорт»…
+    private struct BriefGroup: Identifiable {
+        let kind: String
+        let items: [BriefItemDTO]
+        var id: String { kind }
+    }
+
+    /// Строки брифа, разложенные по типам Tony, в порядке их прихода.
+    private var briefGroups: [BriefGroup] {
+        var order: [String] = []
+        var byKind: [String: [BriefItemDTO]] = [:]
+        for item in brief {
+            if byKind[item.kind] == nil { order.append(item.kind) }
+            byKind[item.kind, default: []].append(item)
+        }
+        return order.map { BriefGroup(kind: $0, items: byKind[$0] ?? []) }
+    }
+
     private var equipmentSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Оборудование").font(Typography.headline).foregroundStyle(Theme.textPrimary)
@@ -355,8 +432,10 @@ struct EventInfoView: View {
 
     private func load() async {
         async let eq = session.eventInfo.equipment(dealId: dealId)
+        async let br = session.eventInfo.equipmentBrief(dealId: dealId)
         async let ev = session.directory.event(id: dealId)
         equipment = await eq
+        brief = await br
         // Метки и признаки читаем из карточки: галочка «нельзя использовать фото»
         // сохраняется вместе с ними одним запросом.
         if let dto = await ev {

@@ -435,6 +435,33 @@ struct MessageBubble: View {
     /// Не пузырь: это уведомление, а не реплика. У вводных автора нет вовсе
     /// (в базе им числится создатель чата), у важного он виден — по объявлению
     /// задают вопросы. Внизу — отметка «Ознакомлен» и счётчик отметившихся.
+    /// Строка вводных: «Название: значение».
+    private struct CRMRow: Identifiable {
+        let id: Int
+        let key: String
+        let value: String
+    }
+
+    /// Строки вводных из сделки, разобранные на «название» и «значение».
+    /// Двоеточие берём первое и только с пробелом после — иначе «Время работы:
+    /// 10:00 - 11:30» ломается по времени (так же делит веб).
+    private var crmRows: [CRMRow] {
+        (message.text ?? "").components(separatedBy: "\n").enumerated().map { index, line in
+            guard let sep = line.range(of: ": "), sep.lowerBound > line.startIndex else {
+                return CRMRow(id: index, key: "", value: line)
+            }
+            return CRMRow(id: index,
+                          key: String(line[line.startIndex..<sep.lowerBound]) + ":",
+                          value: String(line[sep.upperBound...]))
+        }
+    }
+
+    private func dimmedKey(_ key: String) -> AttributedString {
+        var text = AttributedString(key)
+        text.foregroundColor = Theme.textSecondary
+        return text
+    }
+
     private var noticeCard: some View {
         let tint = noticeStyle.color
         return VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -454,10 +481,25 @@ struct MessageBubble: View {
             }
             .foregroundStyle(tint)
 
-            Text(message.text ?? "")
-                .font(Typography.callout)
-                .foregroundStyle(Theme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            if message.systemKind == "crm" {
+                // Вводные из сделки — пары «Название: значение»: название
+                // приглушаем, иначе полтора десятка строк читаются простынёй.
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(crmRows) { row in
+                        Text(row.key.isEmpty
+                             ? AttributedString(row.value)
+                             : dimmedKey(row.key) + AttributedString(" " + row.value))
+                            .font(Typography.callout)
+                            .foregroundStyle(Theme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                Text(message.text ?? "")
+                    .font(Typography.callout)
+                    .foregroundStyle(Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if message.needsAck {
                 HStack(spacing: Spacing.s) {

@@ -14,6 +14,9 @@ struct EquipChecklistView: View {
     var canEdit: Bool = false
     /// Можно ли фиксировать претензию по позиции (`me_rights.claims`).
     var canClaim: Bool = false
+    /// Склады этого человека (справочник Tony): его группа стоит первой и
+    /// раскрыта. Позиций в заказе бывает под двадцать, а грузит он только свои.
+    var myWarehouses: [String] = []
     /// Отметили позицию — чтобы чат перечитал счётчики этапов.
     let onChanged: () -> Void
 
@@ -29,7 +32,51 @@ struct EquipChecklistView: View {
     @State private var newQty = ""
     @State private var adding = false
 
+    /// Какие склады человек свернул руками. По умолчанию раскрыт свой, а если
+    /// складов за человеком не числится — все.
+    @State private var expandedOverride: [String: Bool] = [:]
+
     private var checked: Int { items.filter { $0.isChecked(kind) }.count }
+
+    /// Позиции, разложенные по складам: с миграции 00075 сервер шлёт, откуда что
+    /// едет. Свой склад — первым, остальные видны, но свёрнуты: отметить чужую
+    /// позицию иногда всё-таки надо, прятать её совсем нельзя.
+    private struct WarehouseGroup: Identifiable {
+        let id: String
+        let title: String
+        let isMine: Bool
+        let items: [EquipmentDTO]
+    }
+
+    private var groups: [WarehouseGroup] {
+        var order: [String] = []
+        var byKey: [String: [EquipmentDTO]] = [:]
+        for item in items {
+            let key = item.warehouseKey
+            if byKey[key] == nil { order.append(key) }
+            byKey[key, default: []].append(item)
+        }
+        let list = order.map { key -> WarehouseGroup in
+            let group = byKey[key] ?? []
+            return WarehouseGroup(id: key,
+                                  title: group.first?.warehouseTitle ?? "Без склада",
+                                  isMine: !key.isEmpty && myWarehouses.contains(key),
+                                  items: group)
+        }
+        // Свой склад наверх, остальные — в порядке сервера. Сортировка в Swift
+        // неустойчивая, поэтому порядок внутри держим индексом.
+        return list.enumerated().sorted { a, b in
+            a.element.isMine == b.element.isMine ? a.offset < b.offset : a.element.isMine
+        }.map { $0.element }
+    }
+
+    /// Разбивку показываем, только когда складов правда несколько: на одном она
+    /// превращается в лишний заголовок над списком.
+    private var showsWarehouses: Bool { groups.count > 1 }
+
+    private func isExpanded(_ group: WarehouseGroup) -> Bool {
+        expandedOverride[group.id] ?? (myWarehouses.isEmpty ? true : group.isMine)
+    }
 
     var body: some View {
         NavigationStack {
@@ -82,7 +129,16 @@ struct EquipChecklistView: View {
                                         : "К мероприятию не привязано ни одной позиции — отмечать нечего.")
                     } else {
                         header
-                        ForEach(items) { item in row(item) }
+                        ForEach(groups) { group in
+                            if showsWarehouses {
+                                warehouseHeader(group)
+                                if isExpanded(group) {
+                                    ForEach(group.items) { item in row(item) }
+                                }
+                            } else {
+                                ForEach(group.items) { item in row(item) }
+                            }
+                        }
                     }
                     if canEdit { addRow }
                 }
@@ -160,6 +216,34 @@ struct EquipChecklistView: View {
         }
         .padding(Spacing.s)
         .glass(cornerRadius: Theme.cornerSmall, elevated: false)
+    }
+
+    /// Заголовок склада: свой подсвечен, чужие приглушены и свёрнуты.
+    private func warehouseHeader(_ group: WarehouseGroup) -> some View {
+        let open = isExpanded(group)
+        let done = group.items.filter { $0.isChecked(kind) }.count
+        return Button {
+            withAnimation(.smooth(duration: 0.2)) { expandedOverride[group.id] = !open }
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                Text(group.title + (group.isMine ? " · ваш склад" : ""))
+                    .font(.system(size: 11, weight: group.isMine ? .semibold : .regular))
+                    .foregroundStyle(group.isMine ? Theme.textPrimary : Theme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: Spacing.xs)
+                Text("\(done) из \(group.items.count)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(done == group.items.count ? Theme.success : Theme.textSecondary)
+            }
+            .padding(.horizontal, Spacing.s)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
 
     /// Строка позиции.

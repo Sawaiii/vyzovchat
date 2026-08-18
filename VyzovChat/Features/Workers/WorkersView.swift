@@ -3,6 +3,11 @@ import SwiftUI
 /// Управление сотрудниками — только глобальный админ.
 struct WorkersView: View {
     @EnvironmentObject private var session: AppSession
+
+    /// Заводить и править людей может админ, руководитель и реализатор. Гость
+    /// сюда тоже заходит — смотреть систему целиком, — но только смотрит:
+    /// сервер на любую правку отвечает `guest_readonly`.
+    private var canManage: Bool { session.currentUser?.isAdmin == true }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.adaptiveMetrics) private var metrics
 
@@ -91,8 +96,10 @@ struct WorkersView: View {
                                     NavigationLink { UserProfileView(user: worker) } label: { row(worker) }
                                         .buttonStyle(PressableStyle())
                                         .contextMenu {
-                                            Button { editing = worker } label: {
-                                                Label("Редактировать", systemImage: "pencil")
+                                            if canManage {
+                                                Button { editing = worker } label: {
+                                                    Label("Редактировать", systemImage: "pencil")
+                                                }
                                             }
                                         }
                                 }
@@ -108,8 +115,10 @@ struct WorkersView: View {
             .searchable(text: $query, prompt: "Поиск по ФИО или логину")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Закрыть") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { creating = true } label: { Image(systemName: "person.badge.plus") }
+                if canManage {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { creating = true } label: { Image(systemName: "person.badge.plus") }
+                    }
                 }
             }
             .sheet(isPresented: $creating) {

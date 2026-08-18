@@ -45,6 +45,14 @@ enum PeopleExtras {
                                         json: SetRatingRequest(stars: stars), as: RatingDTO.self)
     }
 
+    /// Кто и когда оценил — админу и руководителю (`can_see_ratings`). Средняя не
+    /// отвечает на вопрос, откуда она взялась: десять человек так решили или один
+    /// пришёл и поставил единицу.
+    static func ratingLog(workerId: String) async -> [RaterMarkDTO] {
+        (try? await APIClient.shared.get("/api/workers/\(workerId)/ratings",
+                                         as: [RaterMarkDTO].self)) ?? []
+    }
+
     static func addSkill(workerId: String, skill: String) async throws -> [String] {
         try await APIClient.shared.post("/api/workers/\(workerId)/skills",
                                          json: AddSkillRequest(skill: skill), as: [String].self)

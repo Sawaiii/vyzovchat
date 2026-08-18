@@ -197,22 +197,32 @@ struct EditEventView: View {
         }
     }
 
+    /// Удалить мероприятие может только админ и руководитель (`canDeleteEvent`).
+    private var canDelete: Bool {
+        SystemRole(session.currentUser?.globalRole).canDeleteEvent
+    }
+
     /// Завершение и удаление мероприятия.
     private var dangerZone: some View {
         VStack(spacing: Spacing.xs) {
             SecondaryButton(title: "Завершить мероприятие", icon: "checkmark.seal") {
                 confirmClose = true
             }
-            Button { confirmDelete = true } label: {
-                HStack(spacing: Spacing.xs) {
-                    Image(systemName: "trash")
-                    Text("Удалить мероприятие")
+            // Удаление — только у админа и руководителя. Реализатору с 14 августа
+            // 2026 отдали полные права, но эту кнопку оставили за руководством:
+            // мероприятие уходит со всей перепиской, и обратно её не достать.
+            if canDelete {
+                Button { confirmDelete = true } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "trash")
+                        Text("Удалить мероприятие")
+                    }
+                    .font(Typography.button).foregroundStyle(Theme.danger)
+                    .frame(maxWidth: .infinity).frame(height: 54)
+                    .glass(cornerRadius: 27, elevated: false)
                 }
-                .font(Typography.button).foregroundStyle(Theme.danger)
-                .frame(maxWidth: .infinity).frame(height: 54)
-                .glass(cornerRadius: 27, elevated: false)
+                .buttonStyle(PressableStyle())
             }
-            .buttonStyle(PressableStyle())
         }
         .confirmationDialog("Завершить мероприятие?", isPresented: $confirmClose, titleVisibility: .visible) {
             Button("Завершить") { Task { await closeEvent() } }

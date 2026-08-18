@@ -44,6 +44,18 @@ struct Message: Identifiable, Codable, Equatable, Hashable {
     var isNotice: Bool {
         ["crm", "alarm", "complaint", "review"].contains(systemKind ?? "")
     }
+    /// Служебная строка-фон: смены, этапы, изменения состава. Это не разговор —
+    /// в непрочитанное такие не идут и уведомлений не шлют (так же считает
+    /// сервер, `SysKinds` в `store/chat.go`). Иначе новый чат сразу светил
+    /// бейджем «2» — «создал чат» и «участвуют», — а каждая смена роли зажигала
+    /// его заново. Врезки (`crm`, `alarm`, `complaint`, `review`) сюда не входят:
+    /// их для того и присылают, чтобы заметили.
+    var isSysLine: Bool {
+        ["shift_in", "shift_out", "shift_edit", "stage_done", "stage_undone",
+         "event_new", "members_list", "member_add", "member_out", "member_role",
+         "member_join"].contains(systemKind ?? "")
+    }
+
     /// Важное от руководства (у него, в отличие от вводных, виден автор).
     var isAlarm: Bool { systemKind == "alarm" }
     /// Жалоба в служебном чате.

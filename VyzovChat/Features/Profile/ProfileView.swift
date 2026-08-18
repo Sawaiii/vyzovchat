@@ -45,7 +45,7 @@ struct ProfileView: View {
                         // Жалобы разбирает не только админ: их адресуют тому, кто
                         // завёл чат. Счётчик показываем всем, у кого они есть.
                         if newComplaints > 0 || session.currentUser?.isAdmin == true { complaintsRow }
-                        if session.currentUser?.isAdmin == true { adminCard }
+                        if session.currentUser?.canViewAdmin == true { adminCard }
                         yandexCard
                         settingsCard
                         legalCard
