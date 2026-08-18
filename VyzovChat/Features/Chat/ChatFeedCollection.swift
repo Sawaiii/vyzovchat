@@ -99,18 +99,29 @@ struct ChatFeedRow: Identifiable, Equatable {
 struct PressPop<Content: View>: View {
     /// Куда сжимается пузырь: своё сообщение прижато вправо, чужое — влево.
     let anchor: UnitPoint
-    /// Содержимому отдаём замыкание «нажали»: им оно и заводит пружину.
-    @ViewBuilder let content: ( () -> Void) -> Content
+    /// Содержимое строит вызывающий, а «нажали» сообщает через ручку.
+    @ViewBuilder let content: (PressPopTrigger) -> Content
 
     @State private var scale: CGFloat = 1
+    @State private var trigger = PressPopTrigger()
 
     var body: some View {
-        content {
-            scale = 0.9
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.12)) { scale = 1 }
-        }
-        .scaleEffect(scale, anchor: anchor)
+        content(trigger)
+            .scaleEffect(scale, anchor: anchor)
+            .onAppear { trigger.fire = press }
     }
+
+    private func press() {
+        scale = 0.9
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5).delay(0.12)) { scale = 1 }
+    }
+}
+
+/// Ручка пружины. Ссылка, а не замыкание в параметре: `MessageBubble` хранит
+/// обработчик удержания у себя, значит тот обязан быть убегающим, — а замыкание,
+/// отданное параметром, таким быть не может.
+final class PressPopTrigger {
+    var fire: () -> Void = {}
 }
 
 // MARK: - Доступ из SwiftUI

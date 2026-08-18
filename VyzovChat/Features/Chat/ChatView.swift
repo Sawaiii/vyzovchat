@@ -674,8 +674,9 @@ struct ChatView: View {
         case .message(let message, _):
             // «Поп» при удержании заводится внутри строки: снаружи ячейка увидела
             // бы только конечное значение, и вместо пружины вышел бы рывок.
-            PressPop(anchor: row.isMine ? .trailing : .leading) { pop in
-                collectionBubble(message, row: row, pageKey: pageKey, pop: pop)
+            PressPop(anchor: row.isMine ? .trailing : .leading) { trigger in
+                collectionBubble(message, row: row, pageKey: pageKey,
+                                 pop: { trigger.fire() })
             }
         }
     }
@@ -807,26 +808,34 @@ struct ChatView: View {
                 // didInitialScroll, и второй раз при возврате не нужно.
                 .onAppear { if isActive { view.settledTopics.insert(pageKey) } }
                 // Переход из поиска: окно ленты уже загружено, осталось встать
-                // на найденном сообщении и подсветить его.
+                // на найденном сообщении и подсветить его. Просим прокрутку
+                // сразу, не через `scrollTarget`: лишний цикл здесь означает,
+                // что лента успевала встать в конец только что подставленного
+                // окна и лишь потом прыгала к сообщению.
                 .onChange(of: view.model.jumpToMessageId) {
                     guard isActive, let target = view.model.jumpToMessageId else { return }
-                    view.scrollTarget = target
                     view.model.jumpToMessageId = nil
+                    view.model.jumpNeedsSettle = false
+                    jump(to: target)
                 }
+                // Переход по цитате: сообщение уже в этой ленте.
                 .onChange(of: view.scrollTarget) {
                     guard isActive, let target = view.scrollTarget else { return }
                     view.scrollTarget = nil
-                    view.model.jumpNeedsSettle = false
-                    // Вести надо к строке ленты, а не к сообщению: у фотографии
-                    // из альбома своей строки нет, альбом склеен в одну.
-                    let anchor = view.model.feedAnchorId(for: target) ?? target
-                    view.highlightedId = anchor
-                    toItem(anchor, .center, false)
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(1800))
-                        withAnimation { view.highlightedId = nil }
-                    }
+                    jump(to: target)
                 }
+        }
+
+        private func jump(to target: String) {
+            // Вести надо к строке ленты, а не к сообщению: у фотографии из
+            // альбома своей строки нет, альбом склеен в одну.
+            let anchor = view.model.feedAnchorId(for: target) ?? target
+            view.highlightedId = anchor
+            toItem(anchor, .center, false)
+            Task {
+                try? await Task.sleep(for: .milliseconds(1800))
+                withAnimation { view.highlightedId = nil }
+            }
         }
     }
 
