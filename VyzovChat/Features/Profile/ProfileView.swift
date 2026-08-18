@@ -15,6 +15,9 @@ struct ProfileView: View {
     @State private var showWorkers = false
     @State private var showAudit = false
     @State private var showComplaints = false
+    /// Какая лента чата используется. Хранится в настройках, а не в состоянии
+    /// экрана: чат читает её при открытии.
+    @State private var useCollectionFeed = ChatFeedSettings.useCollection
     @State private var showLegal = false
     @State private var showBlocked = false
     @State private var showDeleteAccount = false
@@ -273,6 +276,24 @@ struct ProfileView: View {
                 toggleRow("Уведомления", "bell.fill")
                 Divider().opacity(0.3)
                 toggleRow("Загрузка фото по Wi-Fi", "wifi")
+                Divider().opacity(0.3)
+                // Лента чата: новая прокрутка или прежняя. Переключатель нужен,
+                // пока новая не обкатана на живых чатах — сравнить их можно
+                // только руками, и переоткрытый чат сразу берёт выбранную.
+                HStack(spacing: Spacing.s) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .foregroundStyle(Theme.accent).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Новая лента чата").font(Typography.callout)
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("Точная прокрутка без доводки")
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $useCollectionFeed).labelsHidden().tint(Theme.accent)
+                        .onChange(of: useCollectionFeed) { ChatFeedSettings.useCollection = $1 }
+                }
+                .padding(.vertical, Spacing.s)
             }
         }
     }

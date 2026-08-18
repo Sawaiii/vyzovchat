@@ -72,3 +72,18 @@ enum AppConfig {
         }
     }
 }
+
+/// Какая лента чата работает: новая на `UICollectionView` или прежняя на
+/// SwiftUI-`ScrollView`.
+///
+/// Переключатель, а не константа: прокрутку двух реализаций можно сравнить
+/// только руками на устройстве, и ради этого не должно требоваться пересобирать
+/// приложение. Прежняя лента остаётся рядом как запасной вариант.
+enum ChatFeedSettings {
+    private static let key = "vyzovchat.chatFeed.collection"
+
+    static var useCollection: Bool {
+        get { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+}

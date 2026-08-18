@@ -3,7 +3,7 @@ import Combine
 
 /// Элемент ленты чата: разделитель по дням или сообщение (с флагом, показывать ли
 /// на нём статус прочтения — он только на последнем в череде моих подряд).
-enum ChatFeedItem: Identifiable {
+enum ChatFeedItem: Identifiable, Equatable {
     case separator(title: String, key: String)
     case message(Message, showRead: Bool)
     /// Вложение, которое ещё загружается — плитка с кольцом прогресса.

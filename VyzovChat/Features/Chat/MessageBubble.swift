@@ -10,7 +10,7 @@ struct MessageBubble: View {
     enum ReadState { case none, sent, delivered, read }
 
     /// Сколько участников прочитали моё сообщение в мероприятии.
-    struct GroupReadInfo { let read: Int; let total: Int }
+    struct GroupReadInfo: Equatable { let read: Int; let total: Int }
 
     var canDelete: Bool = false
     var canEdit: Bool = false

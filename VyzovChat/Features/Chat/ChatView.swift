@@ -46,6 +46,16 @@ struct ChatView: View {
     /// доводим: человек мог уйти вверх по переписке, и возврат в тему не
     /// должен утаскивать его в конец.
     @State private var settledTopics: Set<String> = []
+    /// Ленты страниц (у пейджера тем их несколько) — через них просим прокрутку
+    /// и узнаём, где на экране лежит сообщение.
+    @State private var feeds = ChatFeedRegistry()
+    /// Где начинается чат в координатах окна: кадр сообщения новая лента отдаёт
+    /// в оконных координатах, а меню раскладывается в координатах чата.
+    @State private var chatOrigin: CGPoint = .zero
+    /// Новая лента (UICollectionView) вместо прежней SwiftUI-прокрутки.
+    /// Читаем один раз при открытии чата: менять реализацию на лету посреди
+    /// открытой переписки незачем.
+    @State private var useCollectionFeed = ChatFeedSettings.useCollection
 
     init(chat: Chat, currentUserId: String = MockData.currentUser.id) {
         _model = StateObject(wrappedValue: ChatViewModel(
@@ -200,6 +210,16 @@ struct ChatView: View {
             if let msg = menuMessage { messageMenu(msg) }
         }
         .coordinateSpace(name: Self.chatSpace)
+        // Начало координат чата в окне. Меряется при раскладке (появилась
+        // клавиатура, повернули экран), а не при прокрутке, — поэтому дёшево.
+        // По нему кадр сообщения из новой ленты переводится в координаты чата.
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { chatOrigin = geo.frame(in: .global).origin }
+                    .onChange(of: geo.frame(in: .global).origin) { chatOrigin = $1 }
+            }
+        )
         .navigationTitle(model.chat.title)
         .navigationBarTitleDisplayMode(.inline)
         // Нижние вкладки в переписке НЕ прячем. `.toolbar(.hidden, for: .tabBar)`
@@ -484,7 +504,18 @@ struct ChatView: View {
     /// соседние — префетч), поэтому структура страниц не меняется на лету.
     private var messagesScroll: some View { feed(for: model.selectedTopicId) }
 
+    @ViewBuilder
     private func feed(for topicId: Int?) -> some View {
+        if useCollectionFeed {
+            collectionFeed(for: topicId)
+        } else {
+            legacyFeed(for: topicId)
+        }
+    }
+
+    /// Прежняя лента на SwiftUI-прокрутке. Остаётся запасным вариантом, пока
+    /// новая не обкатана: переключатель — в профиле.
+    private func legacyFeed(for topicId: Int?) -> some View {
         let isActive = topicId == model.loadedTopicId
         let pageKey = topicId.map(String.init) ?? "main"
         let loading = isActive ? model.isLoading : !model.isTopicLoaded(topicId)
@@ -540,68 +571,151 @@ struct ChatView: View {
                 // после перехода к сообщению надо в этот момент прекратить.
                 .simultaneousGesture(DragGesture(minimumDistance: 8)
                     .onChanged { _ in settleTask?.cancel() })
-                // Первая загрузка чата: есть непрочитанные — встаём там, где они
-                // начинаются; иначе строго в конце ленты.
-                .onChange(of: model.messages.count) {
-                    guard isActive, !didInitialScroll else { return }
-                    didInitialScroll = true
-                    settle(proxy, to: model.initialAnchorId ?? Self.bottomAnchor)
-                }
-                // Пришло новое сообщение. Именно ДОБАВИЛОСЬ, а не «в ленте стало
-                // другое число»: при смене темы массив подменяется целиком, и по
-                // счётчику лента уезжала в конец на каждом свайпе. И только если
-                // человек и так внизу — иначе выдёргивали бы из середины.
-                .onChange(of: model.appendedMessageId) {
-                    guard isActive, let id = model.appendedMessageId else { return }
-                    model.appendedMessageId = nil
-                    // Своё сообщение показываем всегда: отправил — жду увидеть.
-                    let mine = model.messages.first { $0.id == id }.map(model.isMine) ?? false
-                    guard isAtBottom || mine else { return }
-                    withAnimation(.smooth) { proxy.scrollTo(id, anchor: .bottom) }
-                }
-                // Стали активной темой — её лента открывается с конца, но ровно
-                // один раз. Раньше доводчик срабатывал на каждый возврат в тему
-                // и швырял ленту в конец, даже если человек читал середину, —
-                // это и был резкий баунс при свайпе туда-обратно.
-                .onChange(of: isActive) {
-                    guard isActive, !settledTopics.contains(pageKey) else { return }
-                    settledTopics.insert(pageKey)
-                    settleAtBottom(proxy)
-                }
-                // Страница, открытая сразу при входе в чат: её доводит
-                // didInitialScroll, и второй раз при возврате не нужно.
-                .onAppear { if isActive { settledTopics.insert(pageKey) } }
-                // Переход из поиска: окно ленты уже загружено, осталось встать
-                // на найденном сообщении и подсветить его.
-                .onChange(of: model.jumpToMessageId) {
-                    guard isActive, let target = model.jumpToMessageId else { return }
-                    scrollTarget = target
-                    model.jumpToMessageId = nil
-                }
-                .onChange(of: scrollTarget) {
-                    guard isActive, let target = scrollTarget else { return }
-                    scrollTarget = nil
-                    model.jumpNeedsSettle = false
-                    // Вести надо к строке ленты, а не к сообщению: у фотографии
-                    // из альбома своей строки нет, альбом склеен в одну.
-                    let anchor = model.feedAnchorId(for: target) ?? target
-                    highlightedId = anchor
-                    // Всегда доводкой, даже когда сообщение уже загружено.
-                    // Одна плавная прокрутка к далёкой строке не доезжает:
-                    // в ленивом списке она целится по прикидке высот, а
-                    // построенные по дороге строки эту прикидку меняют — и
-                    // прокрутка останавливалась где придётся.
-                    settleCentered(proxy, to: anchor)
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(1800))
-                        withAnimation { highlightedId = nil }
-                    }
-                }
+                .modifier(FeedBehaviors(
+                    view: self, isActive: isActive, pageKey: pageKey,
+                    toBottom: { animated in
+                        // Прежняя лента: только доводкой. Одиночная прокрутка в
+                        // ленивом списке не доезжает.
+                        if animated { jumpToBottom(proxy) } else { settleAtBottom(proxy) }
+                    },
+                    toItem: { id, position, animated in
+                        switch position {
+                        case .center: settleCentered(proxy, to: id)
+                        case .top:    settle(proxy, to: id)
+                        case .bottom:
+                            if animated {
+                                withAnimation(.smooth) { proxy.scrollTo(id, anchor: .bottom) }
+                            } else {
+                                proxy.scrollTo(id, anchor: .bottom)
+                            }
+                        }
+                    }))
 
                 // Только на активной странице: на соседних кнопка не нужна.
-                scrollDownButton(proxy).opacity(isActive ? 1 : 0)
+                scrollDownButton { jumpToBottom(proxy) }.opacity(isActive ? 1 : 0)
             }
         }
+    }
+
+    /// Новая лента: строки те же, держит их `UICollectionView`.
+    private func collectionFeed(for topicId: Int?) -> some View {
+        let isActive = topicId == model.loadedTopicId
+        let pageKey = topicId.map(String.init) ?? "main"
+        let loading = isActive ? model.isLoading : !model.isTopicLoaded(topicId)
+        let items = isActive ? model.activeFeed : model.staticFeed(for: topicId)
+
+        return ZStack(alignment: .bottomTrailing) {
+            ChatFeedCollection(
+                rows: feedRows(items),
+                content: { row in AnyView(rowContent(row, pageKey: pageKey)) },
+                // Карта упоминаний общая для всех строк и приезжает позже
+                // сообщений: пока её нет, «@Иванов» в тексте не кликабелен.
+                revision: model.mentionIndex.count,
+                registry: feeds,
+                pageKey: pageKey,
+                onAtBottomChange: { atBottom in if isActive { updateAtBottom(atBottom) } },
+                onUserScroll: { settleTask?.cancel() },
+                onTap: {
+                    UIApplication.shared.endEditing()
+                    settleTask?.cancel()
+                }
+            )
+            .overlay {
+                if items.isEmpty {
+                    if loading { ProgressView().tint(Theme.accent) } else { emptyState }
+                }
+            }
+            .modifier(FeedBehaviors(
+                view: self, isActive: isActive, pageKey: pageKey,
+                toBottom: { animated in feeds[pageKey]?.scrollToBottom(animated: animated) },
+                toItem: { id, position, animated in
+                    feeds[pageKey]?.scroll(to: id, position: position, animated: animated)
+                }))
+
+            scrollDownButton { feeds[pageKey]?.scrollToBottom(animated: true) }
+                .opacity(isActive ? 1 : 0)
+        }
+    }
+
+    /// Строки для новой ленты: всё, от чего зависит вид пузыря, считаем здесь.
+    /// Ячейка ничего не слушает и перерисовывается ровно тогда, когда её строка
+    /// изменилась, — поэтому набор текста в поле ввода ленты больше не касается.
+    private func feedRows(_ items: [ChatFeedItem]) -> [ChatFeedRow] {
+        items.map { item in
+            guard case let .message(message, showRead) = item else {
+                return ChatFeedRow(id: item.id, item: item)
+            }
+            return ChatFeedRow(
+                id: item.id,
+                item: item,
+                highlighted: highlightedId == message.id,
+                readState: showRead ? readState(for: message) : .none,
+                groupRead: showRead ? model.groupReadInfo(for: message) : nil,
+                readAt: model.partnerReadAt,
+                sender: model.sender(message),
+                isMine: model.isMine(message),
+                replyToMe: message.replyToId != nil && message.replySender != nil
+                    && message.replySender == myFio,
+                canDelete: model.isMine(message) || isAdmin,
+                canEdit: model.isMine(message) && (message.text?.isEmpty == false),
+                canAck: model.canAck
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func rowContent(_ row: ChatFeedRow, pageKey: String) -> some View {
+        switch row.item {
+        case .separator(let title, _):
+            DaySeparator(title: title)
+        case .uploading(let pending):
+            UploadingTile(pending: pending)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        case .message(let message, _):
+            // «Поп» при удержании заводится внутри строки: снаружи ячейка увидела
+            // бы только конечное значение, и вместо пружины вышел бы рывок.
+            PressPop(anchor: row.isMine ? .trailing : .leading) { pop in
+                collectionBubble(message, row: row, pageKey: pageKey, pop: pop)
+            }
+        }
+    }
+
+    private func collectionBubble(_ message: Message, row: ChatFeedRow,
+                                  pageKey: String, pop: @escaping () -> Void) -> some View {
+        MessageBubble(
+            message: message,
+            isMine: row.isMine,
+            sender: row.sender,
+            replyToMe: row.replyToMe,
+            canDelete: row.canDelete,
+            canEdit: row.canEdit,
+            isDM: model.chat.isDirect,
+            readState: row.readState,
+            readAt: row.readAt,
+            groupRead: row.groupRead,
+            highlighted: row.highlighted,
+            mentionPeople: model.mentionIndex,
+            onLongPress: {
+                // Кадр сообщения берём у коллекции: он всегда настоящий, включая
+                // момент прокрутки. Прежняя лента мерила его SwiftUI-геометрией,
+                // но внутри ячейки такой замер устаревает — ячейку двигает
+                // прокрутка, а SwiftUI об этом не пересчитывается.
+                if let frame = feeds[pageKey]?.windowFrame(forItem: message.id) {
+                    menuFrame = frame.offsetBy(dx: -chatOrigin.x, dy: -chatOrigin.y)
+                    menuFrameId = message.id
+                }
+                pop()
+                withAnimation(.smooth(duration: 0.16)) { menuMessage = message }
+                menuPop = true
+            },
+            onReact: { emoji in model.toggleReaction(message, emoji: emoji) },
+            onOpenProfile: { id in profileUser = model.user(for: id) },
+            onOpenMedia: { att in openMedia(att) },
+            onOpenReply: { rid in scrollTarget = rid },
+            canAck: row.canAck,
+            onAck: { Task { await model.ack(message) } },
+            onShowAcks: { ackMessageId = AckTarget(id: message.id) }
+        )
     }
 
     static let bottomAnchor = "chat-bottom-anchor"
@@ -644,11 +758,83 @@ struct ChatView: View {
         }
     }
 
+    /// Поведение ленты, общее для обеих реализаций: первый показ, приход
+    /// сообщения, возврат в тему и переход к найденному. Различаются они только
+    /// тем, КАК прокручивают, — это и приходит закрытиями.
+    private struct FeedBehaviors: ViewModifier {
+        let view: ChatView
+        let isActive: Bool
+        let pageKey: String
+        let toBottom: (_ animated: Bool) -> Void
+        let toItem: (_ id: String, _ position: ChatFeedPosition, _ animated: Bool) -> Void
+
+        func body(content: Content) -> some View {
+            content
+                // Первая загрузка чата: есть непрочитанные — встаём там, где они
+                // начинаются; иначе строго в конце ленты.
+                .onChange(of: view.model.messages.count) {
+                    guard isActive, !view.didInitialScroll else { return }
+                    view.didInitialScroll = true
+                    if let anchor = view.model.initialAnchorId {
+                        toItem(anchor, .top, false)
+                    } else {
+                        toBottom(false)
+                    }
+                }
+                // Пришло новое сообщение. Именно ДОБАВИЛОСЬ, а не «в ленте стало
+                // другое число»: при смене темы массив подменяется целиком, и по
+                // счётчику лента уезжала в конец на каждом свайпе. И только если
+                // человек и так внизу — иначе выдёргивали бы из середины.
+                .onChange(of: view.model.appendedMessageId) {
+                    guard isActive, let id = view.model.appendedMessageId else { return }
+                    view.model.appendedMessageId = nil
+                    // Своё сообщение показываем всегда: отправил — жду увидеть.
+                    let mine = view.model.messages.first { $0.id == id }
+                        .map(view.model.isMine) ?? false
+                    guard view.isAtBottom || mine else { return }
+                    toItem(id, .bottom, true)
+                }
+                // Стали активной темой — её лента открывается с конца, но ровно
+                // один раз. Раньше доводчик срабатывал на каждый возврат в тему
+                // и швырял ленту в конец, даже если человек читал середину, —
+                // это и был резкий баунс при свайпе туда-обратно.
+                .onChange(of: isActive) {
+                    guard isActive, !view.settledTopics.contains(pageKey) else { return }
+                    view.settledTopics.insert(pageKey)
+                    toBottom(false)
+                }
+                // Страница, открытая сразу при входе в чат: её доводит
+                // didInitialScroll, и второй раз при возврате не нужно.
+                .onAppear { if isActive { view.settledTopics.insert(pageKey) } }
+                // Переход из поиска: окно ленты уже загружено, осталось встать
+                // на найденном сообщении и подсветить его.
+                .onChange(of: view.model.jumpToMessageId) {
+                    guard isActive, let target = view.model.jumpToMessageId else { return }
+                    view.scrollTarget = target
+                    view.model.jumpToMessageId = nil
+                }
+                .onChange(of: view.scrollTarget) {
+                    guard isActive, let target = view.scrollTarget else { return }
+                    view.scrollTarget = nil
+                    view.model.jumpNeedsSettle = false
+                    // Вести надо к строке ленты, а не к сообщению: у фотографии
+                    // из альбома своей строки нет, альбом склеен в одну.
+                    let anchor = view.model.feedAnchorId(for: target) ?? target
+                    view.highlightedId = anchor
+                    toItem(anchor, .center, false)
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(1800))
+                        withAnimation { view.highlightedId = nil }
+                    }
+                }
+        }
+    }
+
     /// Кнопка «в конец диалога». Видна, только когда пользователь листает вниз
     /// и ещё не достиг конца.
-    private func scrollDownButton(_ proxy: ScrollViewProxy) -> some View {
+    private func scrollDownButton(_ action: @escaping () -> Void) -> some View {
         Button {
-            jumpToBottom(proxy)
+            action()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.headline)
